@@ -67,6 +67,15 @@ PART_NUMBERS_COLUMNS = [
     'Memory_Type',
     'OS_Type',
     'Wireless_Protocol',
+    # v3.1 - Extended Risk Fields
+    'EOL_Status',                    # Active / NRND / Last_Buy / EOL / Obsolete
+    'Number_of_Alternative_Sources', # 0, 1, 2, 3+
+    'Supplier_Financial_Health',     # A / B / C / D
+    'MTBF_Hours',                    # Mean Time Between Failures
+    'Automotive_Grade',              # None / AEC-Q100 / AEC-Q101 / AEC-Q200
+    'Last_Price_Increase_Pct',       # % ultimo aumento prezzo
+    'Allocation_Status',             # Normal / Constrained / Allocated
+    'Package_Type',                  # QFP / BGA / WLCSP / QFN / SOP / DIP / CSP
     # Timestamps
     'Created_at',
     'Updated_at'

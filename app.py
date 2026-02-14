@@ -276,14 +276,14 @@ st.markdown("**Analisi deterministica del rischio con dipendenze, geo-risk front
 # =============================================================================
 
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+    "Guida",
     "Analisi Rapida",
     "Analisi Multipla",
     "Albero Dipendenze",
     "Mappa Geopolitica",
     "Costi di Switching",
-    "Gestione Database",
     "Simulatore What-If",
-    "Guida"
+    "Gestione Database",
 ])
 
 # =============================================================================
@@ -291,28 +291,28 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
 # =============================================================================
 
 with tab1:
-    render_tab_analisi_rapida()
+    render_tab_guida()
 
 with tab2:
-    render_tab_analisi_multipla()
+    render_tab_analisi_rapida()
 
 with tab3:
-    render_tab_albero_dipendenze()
+    render_tab_analisi_multipla()
 
 with tab4:
-    render_tab_mappa_geopolitica()
+    render_tab_albero_dipendenze()
 
 with tab5:
-    render_tab_costi_switching()
+    render_tab_mappa_geopolitica()
 
 with tab6:
-    render_tab_gestione_database()
+    render_tab_costi_switching()
 
 with tab7:
     render_tab_simulatore_whatif()
 
 with tab8:
-    render_tab_guida()
+    render_tab_gestione_database()
 
 # =============================================================================
 # FOOTER

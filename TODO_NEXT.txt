@@ -1,2 +1,28 @@
-3. Mancano i dati di mercato. Allocation status, book-to-bill ratio, DRAM/NAND spot prices — questi dati dinamici trasformerebbero lo strumento da "risk assessment" a "risk monitoring". L'integrazione con Nexar (che avete già in NEXARAPI/) potrebbe colmare questo gap.
+part_numbers_db.xlsx (foglio Part_Numbers)
+Popolati i nuovi 8 campi + Technology_Node + Frontend/Backend Country per tutti i 13 componenti
+Valori realistici basati sui componenti reali, ad esempio:
+K4B4G1646E-BYMA (Samsung DDR3): EOL=NRND, Allocation=Allocated, PriceIncrease=25%
+STPMIC1APQR (ST PMIC): Alternative_Sources=0 (sole source per quel MPU)
+ESP32-WROOM-32E: Allocation=Constrained, PriceIncrease=12%
+TLE9251VLE (Infineon): Automotive_Grade=AEC-Q100
+BOM_Input_Template_10_Components.xlsx (foglio INPUTS)
+Aggiunte 8 nuove colonne (AK-AR) con header "EXTENDED RISK ASSESSMENT v3.1"
+Header con valori ammessi tra parentesi (es. Active/NRND/Last_Buy/EOL/Obsolete)
+Dati di esempio precompilati per tutti i 10 componenti del template
+I nuovi campi sono opzionali: se lasciati vuoti, il risk engine usa i default sicuri (Active, Normal, A, ecc.) e lo score non cambia.
 
+Riepilogo Miglioramenti Prioritari
+Priorità ALTA (impatto immediato sul valore)
+Integrazione Nexar API — Già avete il modulo, va collegato all'app per avere inventory e pricing real-time
+EOL/PCN Alert System — Nel semiconductor i product change e end-of-life sono frequenti e devastanti se non monitorati
+Second Source Qualification Matrix — Non basta sapere se sei single-source, serve la mappa delle alternative già qualificate
+Priorità MEDIA (maturità del modello)
+Safety Stock dinamico — Passare da buffer statico a formula statistica (Z × σ × √LT) con demand variability
+Tier-2/3 Visibility — Tracciare sub-fornitori critici (gas speciali neon/krypton, substrati, chemicals)
+Supplier Scorecard — KPI quantitativi: On-Time Delivery, Quality PPM, financial health (Dun & Bradstreet)
+Compliance & Sanctions — ITAR, EAR, OFAC, REACH, Conflict Minerals (Dodd-Frank)
+Priorità BASSA (evoluzione futura)
+Monte Carlo Simulation — Risk score probabilistico invece che deterministico
+REST API — Per integrazione con ERP (SAP), PLM (Teamcenter), MES
+Recovery Curve Modeling — Tempo di ramp-up post-disruption per region/supplier
+La piattaforma è già molto ben strutturata — i miglioramenti proposti la porterebbero da strumento di risk assessment statico a piattaforma di supply chain intelligence proattiva.

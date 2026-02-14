@@ -1,0 +1,164 @@
+---
+title: Supply Chain Resilience Platform v3.0 - Architettura Funzionale
+---
+flowchart TB
+    subgraph INPUT["📥 INPUT LAYER"]
+        direction TB
+        UI["🖥️ Streamlit UI<br/>8 Tab Interface"]
+        DB[("📊 part_numbers_db.xlsx<br/>• Part_Numbers (38 campi)<br/>• Client_Data (override)<br/>• Clients (anagrafica)")]
+        NEXAR["🌐 Nexar API<br/>(non ancora integrata)<br/>• Inventory live<br/>• Pricing<br/>• MOQ"]
+        CSV["📄 Upload CSV/Excel<br/>BOM multipli"]
+    end
+
+    subgraph LOOKUP["🔍 DATA RESOLUTION - pn_lookup.py"]
+        direction TB
+        PN_SINGLE["lookup_part_number()<br/>Singolo PN + Client overlay"]
+        PN_BATCH["lookup_batch()<br/>Batch PN + fuzzy search"]
+        MERGE["Merge Global Data<br/>+ Client Overrides<br/>(buffer, lead time, qty BOM)"]
+    end
+
+    subgraph ENGINE["⚙️ RISK ENGINE CORE - risk_engine.py"]
+        direction TB
+        CALC["calculate_component_risk()"]
+
+        subgraph FACTORS["7 Fattori di Rischio (Score 0-100)"]
+            direction LR
+            F1["🌍 Geo Concentration<br/>Frontend+Backend<br/>Peso: 25%"]
+            F2["🏭 Single Source<br/>N° Fab/Plant<br/>Peso: 20%"]
+            F3["⏱️ Lead Time<br/>>6/>10/>16 wks<br/>Peso: 15%"]
+            F4["📦 Buffer Stock<br/>Coverage vs LT<br/>Peso: 15%"]
+            F5["🔗 Dependencies<br/>Stand-alone?<br/>Peso: 10%"]
+            F6["🔒 Proprietary<br/>Commodity?<br/>Peso: 10%"]
+            F7["📋 Certifications<br/>Requalification<br/>Peso: 5%"]
+        end
+
+        SCORE["Risk Score Output<br/>🔴 ALTO ≥55<br/>🟡 MEDIO 30-54<br/>🟢 BASSO <30"]
+    end
+
+    subgraph MODULES["📐 MODULI ANALITICI"]
+        direction TB
+
+        subgraph GEO["geo_risk.py"]
+            GEO_FE["Frontend Risk<br/>(Wafer Fab)<br/>TSMC 60% globale"]
+            GEO_BE["Backend Risk<br/>(OSAT Assembly)<br/>MY/PH concentration"]
+            GEO_NODE["Tech Node Risk<br/>7nm: critico<br/>28nm+: alternative"]
+            GEO_SCORE["Composite Score<br/>FE×0.6 + BE×0.4"]
+            GEO_MAP["Folium Map<br/>Markers geolocalizzati"]
+        end
+
+        subgraph SWITCH["switching_cost.py"]
+            SW_PORT["SW Porting Hours<br/>Code_KB × OS_rate<br/>Baremetal→Android"]
+            SW_QUAL["Qualification Weeks<br/>× 40 h/week"]
+            SW_CERT["Cert Multiplier<br/>AEC-Q: 1.5×<br/>MIL-STD: 2.0×"]
+            SW_CLASS["Classificazione<br/>TRIVIALE <100h<br/>MODERATO 100-500h<br/>COMPLESSO 500-2000h<br/>CRITICO >2000h"]
+        end
+
+        subgraph DEPS["dependency_graph.py"]
+            DEP_BUILD["Build NetworkX<br/>Directed Graph"]
+            DEP_SPOF["Find SPOF<br/>Single Points<br/>of Failure"]
+            DEP_CHAIN["Chain Risk<br/>Propagation<br/>max(self, downstream)"]
+            DEP_MERMAID["Render Mermaid<br/>Diagram"]
+        end
+
+        subgraph WHATIF["whatif_simulator.py"]
+            WI_COUNTRY["🚫 Country Block<br/>Taiwan/China/Korea"]
+            WI_SUPPLIER["🏭 Supplier Outage<br/>Interruzione fornitore"]
+            WI_LEADTIME["⏱️ Lead Time Surge<br/>+10% → +200%"]
+            WI_DEMAND["📈 Demand Spike<br/>Buffer depletion"]
+            WI_IMPACT["💰 Financial Impact<br/>weeks × rate × value"]
+        end
+    end
+
+    subgraph OUTPUT["📤 OUTPUT & VISUALIZATION"]
+        direction TB
+        TAB1["Tab 1: Analisi Rapida<br/>Score + Badge + Suggerimenti"]
+        TAB2["Tab 2: Analisi Multipla<br/>Dashboard BOM completo"]
+        TAB3["Tab 3: Albero Dipendenze<br/>Grafo interattivo"]
+        TAB4["Tab 4: Mappa Geopolitica<br/>Folium world map"]
+        TAB5["Tab 5: Costi Switching<br/>Man-hours breakdown"]
+        TAB6["Tab 6: Gestione DB<br/>CRUD Part Numbers"]
+        TAB7["Tab 7: Simulatore What-If<br/>Scenario analysis"]
+        TAB8["Tab 8: Guida<br/>Documentazione"]
+    end
+
+    subgraph MISSING["❌ GAP DA COLMARE"]
+        direction TB
+        GAP1["🔴 Real-time Market Data<br/>Inventory + Pricing live"]
+        GAP2["🔴 EOL/PCN Alerts<br/>Notifiche automatiche"]
+        GAP3["🔴 Second Source Mapping<br/>Alternative qualificate"]
+        GAP4["🟡 Safety Stock Optimization<br/>Modello statistico"]
+        GAP5["🟡 Tier-2/3 Visibility<br/>Sub-supplier tracking"]
+        GAP6["🟡 Supplier Scorecard<br/>OTD, Quality, Finance"]
+        GAP7["🟡 Compliance Monitor<br/>ITAR, EAR, Sanctions"]
+        GAP8["🟢 Monte Carlo Simulation<br/>Probabilistic risk"]
+        GAP9["🟢 REST API<br/>ERP/PLM integration"]
+        GAP10["🟢 PDF Reports<br/>Management export"]
+    end
+
+    %% Flow connections
+    UI --> LOOKUP
+    DB --> LOOKUP
+    CSV --> LOOKUP
+    NEXAR -.->|"TODO"| LOOKUP
+
+    PN_SINGLE --> MERGE
+    PN_BATCH --> MERGE
+    MERGE --> CALC
+
+    CALC --> FACTORS
+    F1 --> SCORE
+    F2 --> SCORE
+    F3 --> SCORE
+    F4 --> SCORE
+    F5 --> SCORE
+    F6 --> SCORE
+    F7 --> SCORE
+
+    CALC --> GEO
+    CALC --> SWITCH
+    SCORE --> DEPS
+    SCORE --> WHATIF
+
+    GEO_FE --> GEO_SCORE
+    GEO_BE --> GEO_SCORE
+    GEO_NODE --> GEO_SCORE
+    GEO_SCORE --> GEO_MAP
+
+    SW_PORT --> SW_CLASS
+    SW_QUAL --> SW_CLASS
+    SW_CERT --> SW_CLASS
+
+    DEP_BUILD --> DEP_SPOF
+    DEP_BUILD --> DEP_CHAIN
+    DEP_CHAIN --> DEP_MERMAID
+
+    WI_COUNTRY --> WI_IMPACT
+    WI_SUPPLIER --> WI_IMPACT
+    WI_LEADTIME --> WI_IMPACT
+    WI_DEMAND --> WI_IMPACT
+
+    SCORE --> OUTPUT
+    GEO_MAP --> TAB4
+    GEO_SCORE --> TAB1
+    GEO_SCORE --> TAB2
+    SW_CLASS --> TAB5
+    SW_CLASS --> TAB1
+    DEP_MERMAID --> TAB3
+    DEP_SPOF --> TAB2
+    WI_IMPACT --> TAB7
+
+    OUTPUT -.->|"evoluzione"| MISSING
+
+    %% Styling
+    classDef inputStyle fill:#E3F2FD,stroke:#1565C0,stroke-width:2px
+    classDef engineStyle fill:#FFF3E0,stroke:#E65100,stroke-width:2px
+    classDef moduleStyle fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px
+    classDef outputStyle fill:#F3E5F5,stroke:#6A1B9A,stroke-width:2px
+    classDef gapStyle fill:#FFEBEE,stroke:#C62828,stroke-width:2px,stroke-dasharray: 5 5
+
+    class UI,DB,NEXAR,CSV inputStyle
+    class CALC,SCORE,F1,F2,F3,F4,F5,F6,F7 engineStyle
+    class GEO_FE,GEO_BE,GEO_NODE,GEO_SCORE,GEO_MAP,SW_PORT,SW_QUAL,SW_CERT,SW_CLASS moduleStyle
+    class DEP_BUILD,DEP_SPOF,DEP_CHAIN,DEP_MERMAID,WI_COUNTRY,WI_SUPPLIER,WI_LEADTIME,WI_DEMAND,WI_IMPACT moduleStyle
+    class TAB1,TAB2,TAB3,TAB4,TAB5,TAB6,TAB7,TAB8 outputStyle
+    class GAP1,GAP2,GAP3,GAP4,GAP5,GAP6,GAP7,GAP8,GAP9,GAP10 gapStyle

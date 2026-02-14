@@ -235,22 +235,73 @@ def render_tab_analisi_multipla():
 
     col1, col2 = st.columns(2)
 
+    # File BOM di esempio disponibili
+    BOM_EXAMPLES = {
+        "02_BOM_Automotive_ADAS_ECU_15": "02_BOM_Automotive_ADAS_ECU_15.xlsx",
+        "03_BOM_Industrial_IoT_Gateway_12": "03_BOM_Industrial_IoT_Gateway_12.xlsx",
+        "01_BOM_Input_Template_10": "01_BOM_Input_Template_10.xlsx",
+    }
+
     with col1:
-        st.subheader("Input Manuale")
-        pn_list_input = st.text_area(
-            "Inserisci Part Numbers (uno per riga)",
-            placeholder="STM32MP157CAC3\nSTPMIC1APQR\nBME280\nMKE02Z64VLD4",
-            height=150
+        st.subheader("Carica BOM di Esempio")
+
+        selected_bom = st.selectbox(
+            "Seleziona BOM",
+            options=list(BOM_EXAMPLES.keys()),
+            help="Seleziona una BOM di esempio da analizzare"
         )
 
-        if st.button("Analizza Lista", type="primary"):
-            if pn_list_input.strip():
-                pns = [pn.strip() for pn in pn_list_input.split('\n') if pn.strip()]
-                batch = _run_batch_analysis(pns, st.session_state.current_client, st.session_state.run_rate)
-                st.session_state.batch_results = batch
+        if st.button("Carica e Analizza BOM", type="primary"):
+            bom_file = BOM_EXAMPLES[selected_bom]
+            try:
+                # Leggi il file Excel
+                xl = pd.ExcelFile(bom_file)
+                target_sheet = None
+                for sheet in xl.sheet_names:
+                    if sheet.upper() == 'INPUTS':
+                        target_sheet = sheet
+                        break
+                if target_sheet is None:
+                    target_sheet = xl.sheet_names[0]
+
+                df_raw = pd.read_excel(xl, sheet_name=target_sheet, header=None)
+                header_row = None
+                for i, row in df_raw.iterrows():
+                    row_str = ' '.join(str(v).lower() for v in row.values if pd.notna(v))
+                    if 'supplier' in row_str and ('part' in row_str or 'name' in row_str):
+                        header_row = i
+                        break
+                if header_row is not None:
+                    df_uploaded = pd.read_excel(xl, sheet_name=target_sheet, header=header_row)
+                    df_uploaded = df_uploaded.dropna(how='all')
+                else:
+                    df_uploaded = pd.read_excel(xl, sheet_name=target_sheet)
+
+                # Trova colonna Part Number
+                pn_col = None
+                for col in df_uploaded.columns:
+                    col_lower = str(col).lower()
+                    if 'part' in col_lower and 'number' in col_lower:
+                        pn_col = col
+                        break
+                    if col_lower in ('mpn', 'pn', 'part_number', 'partnumber'):
+                        pn_col = col
+                        break
+
+                if pn_col:
+                    pns = df_uploaded[pn_col].dropna().astype(str).tolist()
+                    pns = [p for p in pns if p.strip() and p.strip().lower() not in ('nan', 'none', '')]
+                    st.success(f"Caricati **{len(pns)}** part numbers da **{selected_bom}**")
+
+                    batch = _run_batch_analysis(pns, st.session_state.current_client, st.session_state.run_rate)
+                    st.session_state.batch_results = batch
+                else:
+                    st.error("Colonna 'Part Number' non trovata nel file.")
+            except Exception as e:
+                st.error(f"Errore nel caricamento del file: {str(e)}")
 
     with col2:
-        st.subheader("Upload CSV/Excel")
+        st.subheader("Carica il Tuo File")
         uploaded_file = st.file_uploader(
             "Carica file con lista Part Numbers",
             type=['csv', 'xlsx', 'xls'],
@@ -439,14 +490,106 @@ def render_tab_albero_dipendenze():
     if not HAS_NETWORKX:
         st.error("Libreria `networkx` non installata. Esegui: `pip install networkx`")
     else:
+        import networkx as nx
+        import matplotlib.pyplot as plt
+        import matplotlib
+        matplotlib.use('Agg')
+
         batch = st.session_state.batch_results
         if batch:
             bom_risk = batch['bom_risk']
+            graph = bom_risk.get('dependency_graph', None)
 
-            # Mermaid graph
-            mermaid_code = bom_risk.get('dependency_graph_mermaid', '')
-            if mermaid_code and 'Nessuna dipendenza' not in mermaid_code and 'networkx non installato' not in mermaid_code:
-                # Single Points of Failure
+            if graph is not None and isinstance(graph, nx.DiGraph) and len(graph.nodes()) > 0:
+
+                # --- Visualizzazione networkx DiGraph ---
+                st.subheader("Grafo Dipendenze (networkx DiGraph)")
+
+                fig, ax = plt.subplots(figsize=(12, 7))
+
+                # Layout gerarchico se possibile, altrimenti spring
+                try:
+                    # Prova layout a livelli (top-down)
+                    pos = nx.shell_layout(graph)
+                    if nx.is_directed_acyclic_graph(graph):
+                        # Per DAG usa layout multipartite basato sulla profondita'
+                        for node in graph.nodes():
+                            try:
+                                depth = nx.shortest_path_length(graph, node, list(nx.descendants(graph, node))[-1]) if nx.descendants(graph, node) else 0
+                            except (nx.NetworkXError, IndexError):
+                                depth = 0
+                            graph.nodes[node]['layer'] = depth
+                        pos = nx.multipartite_layout(graph, subset_key='layer')
+                except Exception:
+                    pos = nx.spring_layout(graph, k=2, iterations=50, seed=42)
+
+                # Colori nodi per livello di rischio
+                chain_risks = bom_risk.get('chain_risks', {})
+                node_colors = []
+                for node in graph.nodes():
+                    cr = chain_risks.get(node, {})
+                    cc = cr.get('chain_color', graph.nodes[node].get('risk_color', 'GREEN'))
+                    if cc == 'RED':
+                        node_colors.append('#ff4444')
+                    elif cc == 'YELLOW':
+                        node_colors.append('#ffbb33')
+                    else:
+                        node_colors.append('#00C851')
+
+                # Dimensione nodi proporzionale ai dipendenti
+                node_sizes = []
+                for node in graph.nodes():
+                    try:
+                        n_dep = len(list(nx.ancestors(graph, node)))
+                    except nx.NetworkXError:
+                        n_dep = 0
+                    node_sizes.append(1500 + n_dep * 500)
+
+                # Labels abbreviate
+                labels = {}
+                for node in graph.nodes():
+                    supplier = graph.nodes[node].get('supplier', '')
+                    label = node
+                    if supplier and supplier != 'N/A':
+                        label += f"\n({supplier})"
+                    labels[node] = label
+
+                # Disegna grafo
+                nx.draw_networkx_nodes(graph, pos, ax=ax, node_color=node_colors,
+                                       node_size=node_sizes, edgecolors='#333', linewidths=2, alpha=0.9)
+                nx.draw_networkx_labels(graph, pos, ax=ax, labels=labels,
+                                        font_size=7, font_weight='bold')
+                nx.draw_networkx_edges(graph, pos, ax=ax, edge_color='#1a3e6e',
+                                       arrows=True, arrowsize=30, arrowstyle='-|>',
+                                       connectionstyle='arc3,rad=0.1', width=2.5,
+                                       min_source_margin=25, min_target_margin=25)
+
+                # Etichette sugli archi
+                edge_labels = {}
+                for u, v, data in graph.edges(data=True):
+                    edge_labels[(u, v)] = 'dipende da'
+                nx.draw_networkx_edge_labels(graph, pos, ax=ax, edge_labels=edge_labels,
+                                              font_size=6, font_color='#1a3e6e',
+                                              label_pos=0.5, rotate=True)
+
+                # Legenda
+                from matplotlib.lines import Line2D
+                from matplotlib.patches import FancyArrowPatch
+                legend_elements = [
+                    Line2D([0], [0], marker='o', color='w', markerfacecolor='#ff4444', markersize=12, label='Rischio ALTO'),
+                    Line2D([0], [0], marker='o', color='w', markerfacecolor='#ffbb33', markersize=12, label='Rischio MEDIO'),
+                    Line2D([0], [0], marker='o', color='w', markerfacecolor='#00C851', markersize=12, label='Rischio BASSO'),
+                    Line2D([0], [0], color='#1a3e6e', linewidth=2.5, label='Dipendenza (A -> B)'),
+                ]
+                ax.legend(handles=legend_elements, loc='upper left', framealpha=0.9, fontsize=9)
+
+                ax.set_title("Dependency Graph - Supply Chain BOM", fontsize=14, fontweight='bold')
+                ax.axis('off')
+                fig.tight_layout()
+                st.pyplot(fig)
+                plt.close(fig)
+
+                # --- Single Points of Failure ---
                 spofs = bom_risk.get('spofs', [])
                 if spofs:
                     st.subheader("Single Points of Failure")
@@ -461,13 +604,13 @@ def render_tab_albero_dipendenze():
                         </div>
                         """, unsafe_allow_html=True)
 
-                # Chain Risk Details
-                chain_risks = bom_risk.get('chain_risks', {})
-                if chain_risks:
+                # --- Chain Risk Details ---
+                chain_risks_data = bom_risk.get('chain_risks', {})
+                if chain_risks_data:
                     st.subheader("Rischio di Catena per Componente")
 
                     chain_data = []
-                    for pn, chain in chain_risks.items():
+                    for pn, chain in chain_risks_data.items():
                         chain_data.append({
                             'Part Number': pn,
                             'Score Individuale': chain.get('own_score', 0),
@@ -485,7 +628,7 @@ def render_tab_albero_dipendenze():
 
                     # Rischi di coppia
                     pair_risks = []
-                    for pn, chain in chain_risks.items():
+                    for pn, chain in chain_risks_data.items():
                         for pair in chain.get('pair_risks', []):
                             pair_risks.append(pair)
 
@@ -493,7 +636,7 @@ def render_tab_albero_dipendenze():
                         st.subheader("Score di Resilienza per Coppia Funzionale")
                         for pair in pair_risks:
                             emoji = "🔴" if pair['pair_color'] == 'RED' else "🟡" if pair['pair_color'] == 'YELLOW' else "🟢"
-                            st.markdown(f"{emoji} **{pair['from']}** ← {pair['to']} : Score coppia = **{pair['pair_score']}**")
+                            st.markdown(f"{emoji} **{pair['from']}** <- {pair['to']} : Score coppia = **{pair['pair_score']}**")
             else:
                 st.info("Nessuna dipendenza trovata tra i componenti analizzati. Tutti i componenti sono standalone.")
         else:
@@ -1330,19 +1473,39 @@ def render_tab_guida():
     - **COMPLESSO** (500-2000h): MCU con RTOS o componente con certificazioni
     - **CRITICO** (>2000h): MPU con Linux, equivale a redesign completo
 
-    ### Fattori di Rischio (7 + 1 informativo)
+    ### Fattori di Rischio (14 fattori, score capped a 100)
 
-    | # | Fattore | Peso | Novita' v3.0 |
-    |---|---------|------|-------------|
-    | 1 | Concentrazione Geografica | 25% | Frontend/Backend separati |
-    | 2 | Single Source | 20% | - |
-    | 3 | Lead Time | 15% | - |
-    | 4 | Buffer Stock | 15% | Riduzione proporzionale |
-    | 5 | Dipendenze | 10% | Chain risk propagation |
-    | 6 | Proprietary/Commodity | 10% | - |
-    | 7 | Certificazioni | 5% | - |
-    | + | Technology Node | +5 max | NUOVO |
-    | info | Switching Cost | n/a | NUOVO (informativo) |
+    | # | Fattore | Punti Max | Note |
+    |---|---------|-----------|------|
+    | 1 | Concentrazione Geografica | 25 | Frontend/Backend separati |
+    | 2 | Single Source (stabilimenti) | 20 | Numero di plant produttivi |
+    | 3 | Lead Time | 15 | Soglie 8/16/26 settimane |
+    | 4 | Buffer Stock | 15 | Riduzione proporzionale se ampio |
+    | 5 | Dipendenze | 10 | Chain risk propagation |
+    | 6 | Proprietary/Commodity | 10 | Sostituibilita' del componente |
+    | 7 | Certificazioni | 5 | Tempo di riqualifica |
+    | 8 | **EOL Status** | **+15** | Active/NRND/Last_Buy/EOL/Obsolete |
+    | 9 | **Alternative Sources** | **+10 / -3** | Fonti alternative sul mercato |
+    | 10 | **Salute Finanziaria Fornitore** | **+8** | Rating A/B/C/D |
+    | 11 | **Allocation Status** | **+10** | Normal/Constrained/Allocated |
+    | 12 | **Aumento Prezzo** | **+5** | Ultimo aumento % come segnale di tensione |
+    | 13 | **Package Type** | **+3** | Package avanzati (WLCSP, FCBGA...) |
+    | 14 | **MTBF / Automotive Grade** | info | Informativi, non modificano lo score |
+    | + | Technology Node | +5 | Nodi avanzati <= 7nm |
+    | info | Switching Cost | n/a | Ore-uomo per sostituzione |
+
+    ### Valori ammessi per i nuovi campi Excel
+
+    | Campo | Valori | Esempio |
+    |-------|--------|---------|
+    | EOL_Status | Active, NRND, Last_Buy, EOL, Obsolete | Active |
+    | Number_of_Alternative_Sources | 0, 1, 2, 3, ... | 2 |
+    | Supplier_Financial_Health | A, B, C, D | A |
+    | Allocation_Status | Normal, Constrained, Allocated | Normal |
+    | Last_Price_Increase_Pct | Numero (%) | 15 |
+    | Package_Type | QFP, BGA, WLCSP, QFN, SOP, DIP, CSP... | BGA |
+    | Automotive_Grade | None, AEC-Q100, AEC-Q101, AEC-Q200 | AEC-Q100 |
+    | MTBF_Hours | Numero (ore) | 100000 |
 
     ### Flusso di Lavoro Consigliato
     1. Seleziona il cliente dalla sidebar

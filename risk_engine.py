@@ -268,6 +268,128 @@ def calculate_component_risk(row: Dict[str, Any], run_rate: int) -> Dict[str, An
     # =====================================================================
     switching = calculate_switching_cost(row)
 
+    # =====================================================================
+    # 8. RISCHIO EOL STATUS (fino a +15 punti)
+    # =====================================================================
+    eol_status = str(_get_safe_value(row, 'EOL_Status', 'Active')).strip().upper()
+    eol_scores = {
+        'OBSOLETE': 15, 'EOL': 15, 'LAST_BUY': 12, 'LAST BUY': 12,
+        'NRND': 8, 'NOT RECOMMENDED': 8, 'ACTIVE': 0,
+    }
+    eol_add = eol_scores.get(eol_status, 0)
+    if eol_add > 0:
+        score += eol_add
+        if eol_add >= 12:
+            factors.append(f"⚠️ CRITICO: Componente {eol_status} - fine vita o last buy")
+            suggestions.append("Avviare urgentemente ricerca alternativa e last-time buy")
+            man_hours += 80
+        else:
+            factors.append(f"⚠️ ALTO: Componente {eol_status} - non raccomandato per nuovi design")
+            suggestions.append("Pianificare migrazione a componente attivo")
+            man_hours += 40
+
+    # =====================================================================
+    # 9. RISCHIO ALTERNATIVE SOURCES (fino a +10 / bonus -3)
+    # =====================================================================
+    alt_sources = _get_safe_value(row, 'Number_of_Alternative_Sources', '')
+    if alt_sources is not None and str(alt_sources).strip() != '':
+        try:
+            alt_sources_n = int(float(alt_sources))
+            if alt_sources_n == 0:
+                score += 10
+                factors.append("🚫 CRITICO: Nessuna fonte alternativa sul mercato (sole source)")
+                suggestions.append("Avviare redesign con componente multi-source")
+                man_hours += 120
+            elif alt_sources_n == 1:
+                score += 5
+                factors.append("🚫 ALTO: Solo 1 fonte alternativa disponibile")
+                suggestions.append("Qualificare la fonte alternativa come second source")
+                man_hours += 24
+            elif alt_sources_n >= 3:
+                bonus = min(3, alt_sources_n - 2)
+                score = max(0, score - bonus)
+                factors.append(f"✅ MITIGATO: {alt_sources_n} fonti alternative disponibili (-{bonus} punti)")
+        except (ValueError, TypeError):
+            pass
+
+    # =====================================================================
+    # 10. RISCHIO SALUTE FINANZIARIA FORNITORE (fino a +8)
+    # =====================================================================
+    fin_health = str(_get_safe_value(row, 'Supplier_Financial_Health', 'A')).strip().upper()
+    fin_scores = {'A': 0, 'B': 2, 'C': 5, 'D': 8}
+    fin_add = fin_scores.get(fin_health, 0)
+    if fin_add > 0:
+        score += fin_add
+        if fin_add >= 5:
+            factors.append(f"💰 ALTO: Salute finanziaria fornitore rating {fin_health}")
+            suggestions.append("Monitorare rischio insolvenza/acquisizione fornitore")
+            man_hours += 16
+        else:
+            factors.append(f"💰 MEDIO: Salute finanziaria fornitore rating {fin_health}")
+
+    # =====================================================================
+    # 11. RISCHIO ALLOCATION STATUS (fino a +10)
+    # =====================================================================
+    alloc_status = str(_get_safe_value(row, 'Allocation_Status', 'Normal')).strip().upper()
+    alloc_scores = {'NORMAL': 0, 'CONSTRAINED': 5, 'ALLOCATED': 10}
+    alloc_add = alloc_scores.get(alloc_status, 0)
+    if alloc_add > 0:
+        score += alloc_add
+        if alloc_add >= 10:
+            factors.append("📉 CRITICO: Componente in allocazione - forniture limitate")
+            suggestions.append("Negoziare volumi garantiti e cercare broker affidabili")
+            man_hours += 24
+        else:
+            factors.append("📉 ALTO: Componente con fornitura vincolata (constrained)")
+            suggestions.append("Aumentare buffer stock e attivare monitoraggio lead time")
+            man_hours += 8
+
+    # =====================================================================
+    # 12. RISCHIO AUMENTO PREZZO (fino a +5)
+    # =====================================================================
+    price_increase = _get_safe_value(row, 'Last_Price_Increase_Pct', 0)
+    if price_increase is not None and str(price_increase).strip() != '':
+        try:
+            price_increase_f = float(price_increase)
+            if price_increase_f > 50:
+                score += 5
+                factors.append(f"💲 ALTO: Ultimo aumento prezzo {price_increase_f:.0f}% - segnale di tensione supply")
+                suggestions.append("Valutare alternative per contenere costi e ridurre dipendenza")
+                man_hours += 8
+            elif price_increase_f > 20:
+                score += 3
+                factors.append(f"💲 MEDIO: Ultimo aumento prezzo {price_increase_f:.0f}%")
+        except (ValueError, TypeError):
+            pass
+
+    # =====================================================================
+    # 13. RISCHIO PACKAGE TYPE (fino a +3)
+    # =====================================================================
+    package = str(_get_safe_value(row, 'Package_Type', '')).strip().upper()
+    advanced_packages = ['WLCSP', 'FCCSP', 'FCBGA', 'FOWLP', 'CHIPLET', '2.5D', '3D']
+    if package and any(ap in package for ap in advanced_packages):
+        score += 3
+        factors.append(f"📦 MEDIO: Package avanzato ({package}) - poche fonderie capaci")
+        suggestions.append("Verificare disponibilita' capacity nelle fonderie qualificate")
+
+    # =====================================================================
+    # 14. MTBF e AUTOMOTIVE GRADE (informativi)
+    # =====================================================================
+    mtbf = _get_safe_value(row, 'MTBF_Hours', '')
+    auto_grade = str(_get_safe_value(row, 'Automotive_Grade', '')).strip()
+    if auto_grade and auto_grade.upper() not in ('', 'NONE', 'N/A'):
+        factors.append(f"🚗 INFO: Grado automotive {auto_grade} - supply chain piu' rigida")
+    if mtbf and str(mtbf).strip() != '':
+        try:
+            mtbf_val = float(mtbf)
+            if mtbf_val < 50000:
+                factors.append(f"⏳ INFO: MTBF basso ({mtbf_val:.0f}h) - possibile rischio affidabilita'")
+        except (ValueError, TypeError):
+            pass
+
+    # Cap score a 100
+    score = min(100, score)
+
     # Determina colore rischio
     if score >= RISK_THRESHOLDS['high']:
         color = "RED"
@@ -359,6 +481,7 @@ def calculate_bom_risk_v3(
     if not components_risk:
         return {
             'score': 0, 'color': 'GREEN', 'risk_level': 'N/A',
+            'dependency_graph': None,
             'dependency_graph_mermaid': '', 'chain_risks': {}, 'spofs': [],
             'max_chain_score': 0,
         }
@@ -430,6 +553,7 @@ def calculate_bom_risk_v3(
         'score': round(avg_score, 1),
         'color': color,
         'risk_level': risk_level,
+        'dependency_graph': graph,
         'dependency_graph_mermaid': mermaid,
         'chain_risks': chain_risks,
         'spofs': spofs,

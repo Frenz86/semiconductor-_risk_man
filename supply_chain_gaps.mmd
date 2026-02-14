@@ -1,0 +1,108 @@
+---
+title: Supply Chain Flow - Stato Attuale vs Gap da Colmare
+---
+flowchart LR
+    subgraph TIER3["TIER 3 - Raw Materials"]
+        RAW["Silicon Wafers<br/>Chemicals<br/>Rare Gases<br/>Substrates"]
+    end
+
+    subgraph TIER2["TIER 2 - Wafer Fab (Frontend)"]
+        TSMC["TSMC 🇹🇼<br/>60% advanced nodes"]
+        SAMSUNG["Samsung 🇰🇷<br/>GAA 3nm"]
+        GF["GlobalFoundries 🇺🇸🇩🇪<br/>22nm+"]
+        SMIC["SMIC 🇨🇳<br/>14nm+"]
+    end
+
+    subgraph TIER1B["TIER 1.5 - OSAT (Backend)"]
+        ASE["ASE Group 🇹🇼"]
+        AMKOR["Amkor 🇰🇷🇲🇾"]
+        JCET["JCET 🇨🇳"]
+    end
+
+    subgraph TIER1["TIER 1 - Component Makers"]
+        IDM["IDM<br/>Intel, TI, ST,<br/>Infineon, NXP"]
+        FABLESS["Fabless<br/>AMD, NVIDIA,<br/>Qualcomm"]
+        PASSIVE["Passive<br/>Murata, TDK,<br/>Vishay"]
+    end
+
+    subgraph DIST["DISTRIBUTION"]
+        FRAN["Franchise<br/>Arrow, Avnet,<br/>Future, WPG"]
+        CAT["Catalog<br/>Digi-Key, Mouser,<br/>RS Components"]
+        BROKER["Brokers<br/>⚠️ Grey Market"]
+    end
+
+    subgraph EMS["EMS / CM"]
+        CM["Foxconn, Flex,<br/>Jabil, Sanmina"]
+    end
+
+    subgraph OEM["OEM FINAL"]
+        AUTO["🚗 Automotive"]
+        IND["🏭 Industrial"]
+        MED["🏥 Medical"]
+        AERO["✈️ Aerospace"]
+    end
+
+    %% Supply chain flow
+    RAW --> TSMC & SAMSUNG & GF & SMIC
+    TSMC & SAMSUNG & GF & SMIC --> ASE & AMKOR & JCET
+    ASE & AMKOR & JCET --> IDM & FABLESS
+    IDM & FABLESS & PASSIVE --> FRAN & CAT & BROKER
+    FRAN & CAT --> CM
+    BROKER -.->|"⚠️ risk"| CM
+    CM --> AUTO & IND & MED & AERO
+
+    %% Platform coverage annotations
+    subgraph COVERAGE["✅ COPERTURA PIATTAFORMA ATTUALE"]
+        direction TB
+        C1["✅ Geo Risk Frontend/Backend"]
+        C2["✅ Single Source Detection"]
+        C3["✅ Lead Time Monitoring"]
+        C4["✅ Buffer Stock Analysis"]
+        C5["✅ Dependency Graph + SPOF"]
+        C6["✅ Switching Cost Estimation"]
+        C7["✅ What-If Scenarios"]
+        C8["✅ Tech Node Risk"]
+    end
+
+    subgraph GAPS["❌ GAP DA SVILUPPARE"]
+        direction TB
+        G1["❌ Tier-2/3 Sub-supplier<br/>Tracking (gas, wafer, substrati)"]
+        G2["❌ Real-time Inventory<br/>& Pricing (Nexar/DigiKey)"]
+        G3["❌ EOL/PCN Alerts<br/>Lifecycle monitoring"]
+        G4["❌ Supplier Financial<br/>Health & Scorecard"]
+        G5["❌ Compliance Monitoring<br/>ITAR/EAR/Sanctions"]
+        G6["❌ Demand Forecasting<br/>& Safety Stock Optimization"]
+        G7["❌ Multi-Source<br/>Qualification Matrix"]
+        G8["❌ Recovery Curve<br/>Modeling post-disruption"]
+    end
+
+    %% Map gaps to supply chain stages
+    G1 -.->|"visibilità"| TIER3
+    G2 -.->|"dati live"| DIST
+    G3 -.->|"lifecycle"| TIER1
+    G4 -.->|"financial"| TIER1
+    G5 -.->|"compliance"| TIER2
+    G6 -.->|"demand"| EMS
+    G7 -.->|"alternative"| TIER1
+    G8 -.->|"recovery"| TIER2
+
+    %% Styling
+    classDef tier3 fill:#FFECB3,stroke:#FF8F00,stroke-width:2px
+    classDef tier2 fill:#FFCDD2,stroke:#C62828,stroke-width:2px
+    classDef tier1b fill:#FFE0B2,stroke:#E65100,stroke-width:2px
+    classDef tier1 fill:#C8E6C9,stroke:#2E7D32,stroke-width:2px
+    classDef dist fill:#BBDEFB,stroke:#1565C0,stroke-width:2px
+    classDef ems fill:#D1C4E9,stroke:#4527A0,stroke-width:2px
+    classDef oem fill:#B2DFDB,stroke:#00695C,stroke-width:2px
+    classDef covered fill:#E8F5E9,stroke:#2E7D32,stroke-width:1px
+    classDef gap fill:#FFEBEE,stroke:#C62828,stroke-width:1px,stroke-dasharray: 5 5
+
+    class RAW tier3
+    class TSMC,SAMSUNG,GF,SMIC tier2
+    class ASE,AMKOR,JCET tier1b
+    class IDM,FABLESS,PASSIVE tier1
+    class FRAN,CAT,BROKER dist
+    class CM ems
+    class AUTO,IND,MED,AERO oem
+    class C1,C2,C3,C4,C5,C6,C7,C8 covered
+    class G1,G2,G3,G4,G5,G6,G7,G8 gap
