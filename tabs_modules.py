@@ -1425,12 +1425,10 @@ def render_tab_simulatore_whatif():
 # =============================================================================
 
 def render_tab_guida():
-    """Tab 8: Guida all'uso v3.0"""
-    st.header("Guida all'uso v3.0")
+    """Tab 8: Guida all'uso """
 
     st.markdown("""
-    ## Architettura del Sistema
-                
+    ## Architettura del Sistema        
     ### Importa BOM (Bill of Materials) da file Excel contenenti i componenti elettronici di un cliente
     ### Analizza i rischi dei componenti secondo molteplici dimensioni:
     - Rischi funzionali (dipendenze tra componenti)
