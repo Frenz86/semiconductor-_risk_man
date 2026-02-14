@@ -822,6 +822,7 @@ def render_tab_costi_switching():
             yaxis_title="Componente",
             showlegend=False,
             height=max(300, len(df_sw) * 40 + 100),
+            yaxis={'categoryorder': 'total ascending'}
         )
         fig_sw.add_vline(x=100, line_dash="dash", line_color="green", annotation_text="TRIVIALE")
         fig_sw.add_vline(x=500, line_dash="dash", line_color="orange", annotation_text="MODERATO")
