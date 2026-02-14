@@ -1430,8 +1430,21 @@ def render_tab_guida():
 
     st.markdown("""
     ## Architettura del Sistema
+                
+    ### Importa BOM (Bill of Materials) da file Excel contenenti i componenti elettronici di un cliente
+    ### Analizza i rischi dei componenti secondo molteplici dimensioni:
+    - Rischi funzionali (dipendenze tra componenti)
+    - Rischi geopolitici (localizzazione degli impianti di produzione)
+    - Rischi di fornitura (single source, lead time, EOL, ecc.)
+    - Costi di switching (complessità di sostituzione)
+    ### Fornisce visualizzazioni per prendere decisioni:
+    - Albero delle dipendenze per vedere catene critiche
+    - Mappa geopolitica per rischi per regione
+    - Dashboard con priorità di azione
+    
+    È uno strumento B2B per decision maker che devono valutare e mitigare i rischi nella catena di fornitura elettronica (es. aziende automotive, aerospaziali, consumer electronics).
 
-    La piattaforma v3.0 aggiunge tre moduli analitici alla base v2.0:
+
 
     ### Modulo 1: Albero Dipendenze (Functional Chain Risk)
     - Costruisce un **grafo direzionale** delle dipendenze tra componenti
