@@ -1,0 +1,101 @@
+graph TD
+    %% Livello 1 - Raw Materials
+    A[Raw Materials Suppliers<br/>Silicio purificato, Metalli, Chimici] --> B
+
+    %% Livello 2A - Wafer Foundries
+    B[WAFER FOUNDRIES<br/>TSMC Taiwan 60%<br/>Samsung Korea<br/>GlobalFoundries USA/DE<br/>SMIC China<br/>UMC Taiwan]
+    
+    B --> |Wafer con migliaia di die| C
+
+    %% Livello 2B - OSAT
+    C[ASSEMBLY & TEST OSAT<br/>ASE Group Taiwan<br/>Amkor USA/Asia<br/>JCET China<br/>Powertech Taiwan]
+    
+    C --> |Dicing| C1[Die Singoli]
+    C1 --> |Wire Bonding/Flip Chip| C2[Die + Substrate]
+    C2 --> |Packaging QFP/BGA/CSP| C3[Molding & Marking]
+    C3 --> |Final Test & Binning| D1
+    C3 --> |Final Test & Binning| D2
+
+    %% Livello 3 - Component Manufacturers
+    D1[SEMICONDUCTOR IC MAKERS<br/>IDM: Intel, TI, ST, Infineon<br/>Fabless: AMD, NVIDIA, Qualcomm]
+    
+    D2[PASSIVE COMPONENTS<br/>Murata, TDK, Yageo<br/>Samsung Electro-Mechanics]
+    
+    D3[PCB MANUFACTURERS<br/>TTM, Tripod, Unimicron<br/>FR-4, Flex, HDI]
+
+    D1 --> E1
+    D2 --> E1
+    D3 --> E1
+    D1 --> E2
+    D2 --> E2
+
+    %% Livello 4A - Authorized Distributors Tier 1
+    E1[AUTHORIZED DISTRIBUTORS Tier 1<br/>Arrow Electronics<br/>Avnet<br/>Future Electronics<br/>WPG Holdings Asia]
+    
+    E2[CATALOG DISTRIBUTORS<br/>Digi-Key 13M+ SKU<br/>Mouser Electronics<br/>RS Components<br/>Farnell/Newark]
+
+    E1 --> |Buffer Stock 3-6 mesi<br/>FAE Support| F1
+    E2 --> |No MOQ<br/>Same Day| F1
+    E1 --> F2
+    E2 --> F2
+
+    %% Livello 4B - Regional Distributors
+    F1[REGIONAL DISTRIBUTORS Tier 2<br/>Distributori locali<br/>Specialty distributors<br/>Vertical focus]
+    
+    F2[INDEPENDENT/BROKERS<br/>Spot market<br/>Shortage allocation<br/>Rischio counterfeit]
+
+    F1 --> G
+    F2 --> G
+
+    %% Livello 5 - EMS
+    G[EMS CONTRACT MANUFACTURERS<br/>Foxconn largest<br/>Flex, Jabil, Sanmina<br/>Celestica, Benchmark]
+    
+    G --> |SMT Assembly| G1[PCB Assembly PCBA]
+    G1 --> |ICT/Functional Test| G2[Testing & Validation]
+    G2 --> |Box Build| H1
+
+    %% Alternativa In-House
+    D1 -.->|Alternative path<br/>In-House Production| H2[IN-HOUSE MANUFACTURING<br/>Controllo totale<br/>IP Protection<br/>CAPEX elevato<br/>Minor scala]
+    D2 -.-> H2
+    D3 -.-> H2
+    E1 -.-> H2
+    H2 --> H1
+
+    %% Livello 6 - OEM Final Customer
+    H1[OEM FINAL CUSTOMER B2B]
+    
+    H1 --> I1[AUTOMOTIVE<br/>VW, BMW, Tesla<br/>Bosch, Continental]
+    H1 --> I2[INDUSTRIAL<br/>Siemens, ABB<br/>Automation, Robotics]
+    H1 --> I3[TELECOM<br/>Ericsson, Nokia<br/>5G Infrastructure]
+    H1 --> I4[MEDICAL<br/>Imaging, Monitoring<br/>Diagnostics]
+    H1 --> I5[CONSUMER<br/>Smartphones, PCs<br/>Smart Home, Wearables]
+    H1 --> I6[AEROSPACE/DEFENSE<br/>Avionics, Satellites<br/>Defense Systems]
+
+    %% Interdipendenze Critiche
+    D1 -.->|Dipendenza inscindibile<br/>MPU con PMIC| D1
+    D1 -.->|MCU con Companion ICs| D1
+    D1 -.->|RF SoC con Front-End| D1
+
+    %% Styling
+    classDef critical fill:#ff6b6b,stroke:#c92a2a,stroke-width:3px,color:#fff
+    classDef high fill:#ffa94d,stroke:#e67700,stroke-width:2px
+    classDef medium fill:#74c0fc,stroke:#1971c2,stroke-width:2px
+    classDef low fill:#b2f2bb,stroke:#2f9e44,stroke-width:2px
+    
+    class B critical
+    class C high
+    class D1 critical
+    class E1,E2 medium
+    class F2 high
+    class G medium
+
+    %% Risk Labels
+    B -.->|RISCHIO GEOPOLITICO<br/>Concentrazione Taiwan 60%| RISK1[CRITICAL]
+    C -.->|Dipendenza Asia-Pacific| RISK2[HIGH]
+    D1 -.->|Allocation Shortage<br/>Fabless Model| RISK3[CRITICAL]
+    F2 -.->|Grey Market<br/>Counterfeit Risk| RISK4[MEDIUM]
+
+    style RISK1 fill:#ff0000,color:#fff
+    style RISK2 fill:#ff6b00,color:#fff
+    style RISK3 fill:#ff0000,color:#fff
+    style RISK4 fill:#ffaa00,color:#000

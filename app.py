@@ -1,10 +1,18 @@
 """
-Supply Chain Risk Assessment Tool
-=================================
-App Streamlit per valutare il rischio della supply chain elettronica.
+Supply Chain Risk Assessment Tool v3.0 - Resilience Platform
+=============================================================
+Piattaforma per la valutazione proattiva del rischio e della resilienza
+della supply chain elettronica.
+
+Novità v3.0:
+- Albero Dipendenze con grafo interattivo e chain risk propagation
+- Mappa Geopolitica con rischio frontend/backend
+- Costi di Switching con classificazione TRIVIALE/MODERATO/COMPLESSO/CRITICO
+- Technology Node risk assessment
+- Buffer stock con riduzione proporzionale del rischio
 
 Per eseguire:
-1. pip install streamlit pandas openpyxl xlsxwriter plotly
+1. pip install -r requirements.txt
 2. streamlit run app.py
 """
 
@@ -15,615 +23,1551 @@ import plotly.graph_objects as go
 import streamlit.components.v1 as components
 from io import BytesIO
 from pathlib import Path
+from datetime import datetime
+from typing import Union, List, Any, Dict
 
-# Configurazione pagina
+# Import moduli personalizzati
+from risk_engine import calculate_component_risk, calculate_bom_risk, calculate_bom_risk_v3
+from pn_lookup import PartNumberDatabase
+from geo_risk import calculate_geo_risk, get_technology_node_risk, generate_risk_map_data
+from switching_cost import calculate_switching_cost
+from dependency_graph import build_dependency_graph, HAS_NETWORKX
+from whatif_simulator import simulate_disruption, get_predefined_scenarios, format_scenario_result, SCENARIO_TYPES
+
+# =============================================================================
+# CONFIGURAZIONE PAGINA
+# =============================================================================
+
 st.set_page_config(
-                    page_title="Supply Chain Risk Assessment",
-                    page_icon="🔌",
-                    layout="wide"
-                )
+    page_title="Supply Chain Resilience Platform v3.0",
+    page_icon="🔌",
+    layout="wide"
+)
 
-# CSS personalizzato
+# =============================================================================
+# CSS PERSONALIZZATO
+# =============================================================================
+
 st.markdown("""
 <style>
     .risk-red { background-color: #ff4444; color: white; padding: 10px; border-radius: 5px; text-align: center; }
     .risk-yellow { background-color: #ffbb33; color: black; padding: 10px; border-radius: 5px; text-align: center; }
     .risk-green { background-color: #00C851; color: white; padding: 10px; border-radius: 5px; text-align: center; }
+    .risk-orange { background-color: #ff8800; color: white; padding: 10px; border-radius: 5px; text-align: center; }
     .metric-card { background-color: #f0f2f6; padding: 20px; border-radius: 10px; margin: 10px 0; }
     .stMetric { background-color: #ffffff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .pn-chip {
+        display: inline-block;
+        padding: 4px 12px;
+        margin: 4px;
+        border-radius: 16px;
+        background-color: #e0e0e0;
+        font-family: monospace;
+        font-size: 0.9em;
+    }
+    .pn-found { background-color: #d4edda; color: #155724; }
+    .pn-not-found { background-color: #f8d7da; color: #721c24; }
+    .switching-triviale { background-color: #00C851; color: white; padding: 5px 10px; border-radius: 3px; display: inline-block; }
+    .switching-moderato { background-color: #ffbb33; color: black; padding: 5px 10px; border-radius: 3px; display: inline-block; }
+    .switching-complesso { background-color: #ff8800; color: white; padding: 5px 10px; border-radius: 3px; display: inline-block; }
+    .switching-critico { background-color: #ff4444; color: white; padding: 5px 10px; border-radius: 3px; display: inline-block; }
+    .spof-badge { background-color: #ff4444; color: white; padding: 3px 8px; border-radius: 3px; font-weight: bold; }
+    .geo-frontend { border-left: 4px solid #1976D2; padding-left: 10px; margin: 5px 0; }
+    .geo-backend { border-left: 4px solid #FF9800; padding-left: 10px; margin: 5px 0; }
 </style>
 """, unsafe_allow_html=True)
 
+# =============================================================================
+# SESSION STATE INITIALIZATION
+# =============================================================================
+
+def init_session_state():
+    """Inizializza lo stato della sessione."""
+    if 'db' not in st.session_state:
+        st.session_state.db = PartNumberDatabase()
+        # Migra database se necessario
+        st.session_state.db.migrate_database()
+
+    if 'current_client' not in st.session_state:
+        clients = st.session_state.db.get_all_clients()
+        if clients:
+            st.session_state.current_client = clients[0]['Client_ID']
+        else:
+            st.session_state.current_client = None
+
+    if 'run_rate' not in st.session_state:
+        client = st.session_state.db.get_client(st.session_state.current_client) if st.session_state.current_client else None
+        st.session_state.run_rate = client['Default_Run_Rate'] if client else 5000
+
+    if 'analysis_results' not in st.session_state:
+        st.session_state.analysis_results = []
+
+    if 'batch_results' not in st.session_state:
+        st.session_state.batch_results = None
+
+init_session_state()
 
 # =============================================================================
-# MOTORE DI CALCOLO DEL RISCHIO
+# FUNZIONI HELPER
 # =============================================================================
 
-def calculate_component_risk(row, run_rate):
-    """Calcola il rischio per un singolo componente"""
-    
-    score = 0
-    factors = []
-    suggestions = []
-    man_hours = 0
-    
-    # Estrai i paesi degli stabilimenti
-    countries = []
-    for col in ['Country of Manufacturing Plant 1', 'Country of Manufacturing Plant 2', 
-                'Country of Manufacturing Plant 3', 'Country of Manufacturing Plant 4']:
-        if col in row and pd.notna(row[col]) and str(row[col]).strip():
-            countries.append(str(row[col]).strip())
-    
-    high_risk_countries = ['taiwan', 'china', 'korea', 'japan', 'malaysia', 'singapore', 'philippines']
-    
-    # 1. RISCHIO CONCENTRAZIONE GEOGRAFICA (25%)
-    if countries:
-        unique_countries = list(set(countries))
-        asia_count = sum(1 for c in countries if any(hr in c.lower() for hr in high_risk_countries))
-        
-        if len(unique_countries) == 1 and asia_count > 0:
-            score += 25
-            factors.append(f"🌏 CRITICO: Tutti gli stabilimenti in {unique_countries[0]}")
-            suggestions.append("Diversificare con fornitori in EU/Americas")
-            man_hours += 40
-        elif asia_count == len(countries) and len(countries) > 0:
-            score += 20
-            factors.append("🌏 ALTO: Tutti gli stabilimenti in area Asia-Pacifico")
-            suggestions.append("Considerare fornitori con stabilimenti in EU/Americas")
-            man_hours += 30
-        elif asia_count > len(countries) / 2:
-            score += 12
-            factors.append("🌏 MEDIO: Maggioranza stabilimenti in Asia")
-    
-    # 2. RISCHIO SINGLE SOURCE (20%)
-    num_plants = len(countries)
-    if num_plants == 1:
-        score += 20
-        factors.append("🏭 CRITICO: Un solo stabilimento produttivo")
-        suggestions.append("Identificare e qualificare second source")
-        weeks_qual = row.get('Weeks to qualify', 12)
-        if pd.notna(weeks_qual):
-            man_hours += int(weeks_qual) * 40
-        else:
-            man_hours += 200
-    elif num_plants == 2:
-        score += 10
-        factors.append("🏭 MEDIO: Solo 2 stabilimenti produttivi")
-    
-    # 3. RISCHIO LEAD TIME (15%)
-    lead_time = row.get('Supplier Lead Time (weeks)', 0)
-    if pd.notna(lead_time):
-        lead_time = int(lead_time)
-        if lead_time > 16:
-            score += 15
-            factors.append(f"⏱️ CRITICO: Lead time molto lungo ({lead_time} settimane)")
-            suggestions.append("Negoziare rolling forecast o VMI con il fornitore")
-            man_hours += 16
-        elif lead_time > 10:
-            score += 10
-            factors.append(f"⏱️ ALTO: Lead time lungo ({lead_time} settimane)")
-            suggestions.append("Implementare rolling forecast")
-            man_hours += 8
-        elif lead_time > 6:
-            score += 5
-            factors.append(f"⏱️ MEDIO: Lead time moderato ({lead_time} settimane)")
-    
-    # 4. RISCHIO BUFFER STOCK (15%)
-    buffer_stock = row.get('If Dedicated Buffer Stock Units to the supplier is yes specify the number of Units', 0)
-    qty_per_bom = row.get('How Many Device of this specific PN are in the BOM?', 1)
-    
-    if pd.notna(buffer_stock) and pd.notna(qty_per_bom) and pd.notna(lead_time):
-        try:
-            buffer_stock = float(buffer_stock)
-            qty_per_bom = float(qty_per_bom) if float(qty_per_bom) > 0 else 1
-            weekly_consumption = run_rate * qty_per_bom
-            
-            if weekly_consumption > 0:
-                coverage_weeks = buffer_stock / weekly_consumption
-                
-                if coverage_weeks < lead_time:
-                    score += 15
-                    factors.append(f"📦 CRITICO: Buffer copre solo {coverage_weeks:.1f} settimane (lead time: {lead_time})")
-                    suggestions.append(f"Aumentare buffer stock ad almeno {lead_time * 1.5:.0f} settimane di copertura")
-                    man_hours += 8
-                elif coverage_weeks < lead_time * 1.5:
-                    score += 8
-                    factors.append(f"📦 MEDIO: Buffer copre {coverage_weeks:.1f} settimane")
-        except:
-            pass
-    
-    # 5. RISCHIO DIPENDENZE (10%)
-    standalone = row.get('Stand-Alone Functional Device (Y/N)', 'Y')
-    if pd.notna(standalone) and str(standalone).upper() == 'N':
-        score += 10
-        dependency = row.get('In case answer on Column C is Y, Which other device in the BOM is necessary to run the PN on Column B? (e.g. PMIC for MPU, Memory for MPU)', '')
-        if pd.notna(dependency) and dependency:
-            factors.append(f"🔗 ALTO: Dipende da altri componenti ({dependency})")
-        else:
-            factors.append("🔗 ALTO: Dipende da altri componenti nella BOM")
-        suggestions.append("Verificare allineamento rischio con componenti dipendenti")
-    
-    # 6. RISCHIO PROPRIETARY (10%)
-    proprietary = row.get('Proprietary (Y/N)**', 'N')
-    commodity = row.get('Commodity (Y/N)*', 'Y')
-    
-    if pd.notna(proprietary) and str(proprietary).upper() == 'Y':
-        score += 10
-        factors.append("🔒 ALTO: Componente proprietario (no alternative dirette)")
-        suggestions.append("Avviare studio di redesign con componente commodity/standard")
-        man_hours += 200
-    elif pd.notna(commodity) and str(commodity).upper() == 'N':
-        score += 5
-        factors.append("🔒 MEDIO: Componente non-commodity")
-    
-    # 7. RISCHIO CERTIFICAZIONI (5%)
-    weeks_qualify = row.get('Weeks to qualify', 0)
-    certification = row.get('Specify Certification/Qualification', '')
-    
-    if pd.notna(weeks_qualify) and int(weeks_qualify) > 12:
-        score += 5
-        factors.append(f"📋 MEDIO: Riqualifica lunga ({int(weeks_qualify)} settimane)")
-        if pd.notna(certification) and certification:
-            factors[-1] += f" - {certification}"
-        suggestions.append("Pre-qualificare alternative prima di potenziale EOL")
-        man_hours += 16
-    
-    # Determina colore rischio
-    if score >= 55:
-        color = "RED"
-        risk_level = "ALTO"
-    elif score >= 30:
-        color = "YELLOW"
-        risk_level = "MEDIO"
-    else:
-        color = "GREEN"
-        risk_level = "BASSO"
-    
+def get_client_run_rate(client_id):
+    """Ottiene il run rate di un cliente."""
+    client = st.session_state.db.get_client(client_id)
+    return client['Default_Run_Rate'] if client else 5000
+
+
+def render_risk_badge(risk_level, score):
+    """Renderizza un badge del rischio."""
+    color_map = {
+        'ALTO': 'risk-red',
+        'MEDIO': 'risk-yellow',
+        'BASSO': 'risk-green'
+    }
+    css_class = color_map.get(risk_level, 'risk-green')
+    st.markdown(f"""
+    <div class="{css_class}">
+        <h3>{risk_level}</h3>
+        <p>Score: {score}/100</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+def render_switching_badge(classification):
+    """Renderizza un badge per la classificazione di switching."""
+    css_class = f"switching-{classification.lower()}"
+    st.markdown(f'<span class="{css_class}">{classification}</span>', unsafe_allow_html=True)
+
+
+def render_geo_detail(geo_risk):
+    """Renderizza i dettagli del rischio geografico frontend/backend."""
+    frontend = geo_risk.get('frontend_country', 'N/A').title()
+    backend = geo_risk.get('backend_country', 'N/A').title()
+    f_level = geo_risk.get('frontend_level', 'N/A')
+    b_level = geo_risk.get('backend_level', 'N/A')
+
+    st.markdown(f"""
+    <div class="geo-frontend">
+        <strong>Frontend (Wafer Fab):</strong> {frontend} - {f_level}<br/>
+        <small>{geo_risk.get('frontend_reason', '')}</small>
+    </div>
+    <div class="geo-backend">
+        <strong>Backend (Assembly/Test):</strong> {backend} - {b_level}<br/>
+        <small>{geo_risk.get('backend_reason', '')}</small>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+def _is_component_affected(component: dict, scenario: dict) -> bool:
+    """Verifica se un componente è affetto dallo scenario."""
+    from whatif_simulator import _is_component_affected as _check_affected
+    return _check_affected(component, scenario)
+
+
+def render_mermaid(mermaid_code, height=600):
+    """Renderizza un diagramma Mermaid in Streamlit."""
+    components.html(f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
+        <style>
+            body {{ margin: 0; padding: 20px; font-family: Arial, sans-serif; background: white; }}
+            .mermaid {{ background: white; padding: 20px; }}
+        </style>
+    </head>
+    <body>
+        <div class="mermaid" style="background: white;">
+{mermaid_code}
+        </div>
+        <script>
+            mermaid.initialize({{ startOnLoad: true, theme: 'default', securityLevel: 'loose' }});
+        </script>
+    </body>
+    </html>
+    """, height=height, scrolling=True)
+
+
+def run_batch_analysis(pns, client_id, run_rate):
+    """Esegue analisi batch e restituisce risultati strutturati."""
+    results = st.session_state.db.lookup_batch(pns, client_id)
+    found_components = {pn: data for pn, data in results.items() if data is not None}
+    not_found = [pn for pn, data in results.items() if data is None]
+
+    if not found_components:
+        return None
+
+    # Calcola rischi individuali
+    components_data = []
+    components_risk = []
+    for pn, data in found_components.items():
+        risk = calculate_component_risk(data, run_rate)
+        risk['part_number'] = pn
+        risk['supplier'] = data.get('Supplier Name', 'N/A')
+        risk['category'] = data.get('Category of product (MCU, MPU, Sensor, Analogic, Power, Passive Component, Transceiver Wireless)', 'N/A')
+        components_risk.append(risk)
+        data['Part Number'] = pn
+        components_data.append(data)
+
+    # Calcola BOM risk v3 (con dependency graph)
+    bom_risk_v3 = calculate_bom_risk_v3(components_data, components_risk)
+
     return {
-        'score': score,
-        'color': color,
-        'risk_level': risk_level,
-        'factors': factors,
-        'suggestions': suggestions,
-        'man_hours': man_hours
+        'components_data': components_data,
+        'components_risk': components_risk,
+        'bom_risk': bom_risk_v3,
+        'found_count': len(found_components),
+        'total_count': len(pns),
+        'not_found': not_found,
     }
 
 
-def calculate_bom_risk(components_risk, df):
-    """Calcola il rischio complessivo della BOM pesato per valore"""
-    
-    if not components_risk:
-        return {'score': 0, 'color': 'GREEN', 'risk_level': 'N/A'}
-    
-    total_value = 0
-    weighted_score = 0
-    
-    for i, risk in enumerate(components_risk):
-        if i < len(df):
-            price = df.iloc[i].get('Unit Price ($)', 1)
-            qty = df.iloc[i].get('How Many Device of this specific PN are in the BOM?', 1)
-            
-            price = float(price) if pd.notna(price) else 1
-            qty = float(qty) if pd.notna(qty) else 1
-            
-            value = price * qty
-            total_value += value
-            weighted_score += risk['score'] * value
-    
-    if total_value > 0:
-        avg_score = weighted_score / total_value
-    else:
-        avg_score = sum(r['score'] for r in components_risk) / len(components_risk)
-    
-    if avg_score >= 50:
-        return {'score': avg_score, 'color': 'RED', 'risk_level': 'ALTO'}
-    elif avg_score >= 30:
-        return {'score': avg_score, 'color': 'YELLOW', 'risk_level': 'MEDIO'}
-    else:
-        return {'score': avg_score, 'color': 'GREEN', 'risk_level': 'BASSO'}
-
-
 # =============================================================================
-# INTERFACCIA UTENTE
+# SIDEBAR
 # =============================================================================
 
-st.title("🔌 Supply Chain Risk Assessment Tool")
-st.markdown("**Valutazione del rischio della supply chain per componenti elettronici**")
-
-# Sidebar
 with st.sidebar:
-    st.header("⚙️ Parametri")
-    run_rate = st.number_input("Run Rate (PCB/settimana)", min_value=1, value=5000, step=100)
+    st.header("Configurazione")
 
-    st.markdown("---")
-    st.header("📊 Legenda Rischio")
-    st.markdown('<div class="risk-red">🔴 ALTO (≥55 punti)</div>', unsafe_allow_html=True)
-    st.markdown('<div class="risk-yellow">🟡 MEDIO (30-54 punti)</div>', unsafe_allow_html=True)
-    st.markdown('<div class="risk-green">🟢 BASSO (<30 punti)</div>', unsafe_allow_html=True)
+    clients = st.session_state.db.get_all_clients()
+    if clients:
+        client_options = {f"{c['Client_Name']} ({c['Client_ID']})": c['Client_ID'] for c in clients}
+        selected = st.selectbox(
+            "Seleziona Cliente",
+            options=list(client_options.keys()),
+            index=list(client_options.values()).index(st.session_state.current_client) if st.session_state.current_client else 0
+        )
+        st.session_state.current_client = client_options[selected]
 
-    st.markdown("---")
-    st.header("ℹ️ Info")
-    st.markdown("""
-    **Fattori di rischio:**
-    - Concentrazione geografica (25%)
-    - Single source (20%)
-    - Lead time (15%)
-    - Buffer stock (15%)
-    - Dipendenze (10%)
-    - Proprietario/Commodity (10%)
-    - Certificazioni (5%)
-    """)
+        if st.session_state.run_rate != get_client_run_rate(st.session_state.current_client):
+            st.session_state.run_rate = get_client_run_rate(st.session_state.current_client)
+    else:
+        st.warning("Nessun cliente trovato. Vai su 'Gestione Database' per aggiungerne uno.")
+        st.session_state.current_client = None
 
-# Tabs
-tab1, tab2, tab3 = st.tabs(["📁 Analisi BOM", "📊 Grafo Algoritmo Utilizzato", "ℹ️ Guida"])
-
-with tab1:
-    st.header("📁 Carica File BOM")
-    uploaded_file = st.file_uploader(
-        "Trascina qui il file Excel con i dati dei componenti",
-        type=['xlsx', 'xls'],
-        help="Il file deve contenere un foglio 'INPUTS' con i dati dei componenti"
+    st.session_state.run_rate = st.number_input(
+        "Run Rate (PCB/settimana)",
+        min_value=1,
+        value=st.session_state.run_rate,
+        step=100,
+        key="run_rate_input"
     )
 
-    if uploaded_file is not None:
-        try:
-            # Leggi il file
-            xl = pd.ExcelFile(uploaded_file)
+    st.markdown("---")
+    st.header("Legenda Rischio")
+    st.markdown('<div class="risk-red">ALTO (>=55 punti)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="risk-yellow">MEDIO (30-54 punti)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="risk-green">BASSO (<30 punti)</div>', unsafe_allow_html=True)
 
-            # Cerca il foglio INPUTS
-            if 'INPUTS' in xl.sheet_names:
-                df_raw = pd.read_excel(uploaded_file, sheet_name='INPUTS', header=None)
+    st.markdown("---")
+    st.header("Database Stats")
+    stats = st.session_state.db.get_stats()
+    st.metric("Part Numbers", stats['total_part_numbers'])
+    st.metric("Clienti", stats['total_clients'])
 
-                # Trova la riga header (quella con "Supplier Name")
-                header_row = None
-                for i, row in df_raw.iterrows():
-                    if 'Supplier Name' in row.values:
-                        header_row = i
-                        break
+# =============================================================================
+# HEADER
+# =============================================================================
 
-                if header_row is not None:
-                    # Rileggi con l'header corretto
-                    df = pd.read_excel(uploaded_file, sheet_name='INPUTS', header=header_row)
-                    # Rimuovi righe vuote
-                    df = df.dropna(subset=['Supplier Name'])
+st.title("Supply Chain Resilience Platform v3.0")
+st.markdown("**Analisi deterministica del rischio con dipendenze, geo-risk frontend/backend e costi di switching**")
 
-                    st.success(f"✅ File caricato! Trovati **{len(df)} componenti**")
+# =============================================================================
+# TABS
+# =============================================================================
 
-                    # Mostra dati caricati
-                    with st.expander("📋 Visualizza dati caricati", expanded=False):
-                        st.dataframe(df, use_container_width=True)
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+    "Analisi Rapida",
+    "Analisi Multipla",
+    "Albero Dipendenze",
+    "Mappa Geopolitica",
+    "Costi di Switching",
+    "Gestione Database",
+    "Simulatore What-If",
+    "Guida"
+])
 
-                    # Calcola rischi
-                    st.header("📊 Risultati Analisi Rischio")
+# =============================================================================
+# TAB 1: ANALISI RAPIDA (evoluto con geo + switching)
+# =============================================================================
 
-                    components_risk = []
-                    for idx, row in df.iterrows():
-                        risk = calculate_component_risk(row, run_rate)
-                        risk['supplier'] = row.get('Supplier Name', 'N/A')
-                        risk['part_number'] = row.get('Supplier Part Number', 'N/A')
-                        risk['category'] = row.get('Category of product (MCU, MPU, Sensor, Analogic, Power, Passive Component, Transceiver Wireless)', 'N/A')
-                        components_risk.append(risk)
+with tab1:
+    st.header("Analisi Rapida Part Number")
 
-                    # Rischio BOM complessivo
-                    bom_risk = calculate_bom_risk(components_risk, df)
+    col1, col2 = st.columns([3, 1])
 
-                    # Dashboard metriche
-                    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        pn_input = st.text_input(
+            "Inserisci Part Number",
+            placeholder="es. STM32MP157CAC3",
+            key="pn_single_input"
+        ).strip()
 
-                    with col1:
-                        color_class = f"risk-{bom_risk['color'].lower()}"
-                        st.markdown(f"""
-                        <div class="{color_class}">
-                            <h3>RISCHIO BOM</h3>
-                            <h1>{bom_risk['risk_level']}</h1>
-                            <p>Score: {bom_risk['score']:.1f}/100</p>
-                        </div>
-                        """, unsafe_allow_html=True)
+    with col2:
+        st.write("")
+        st.write("")
+        analyze_btn = st.button("Analizza", type="primary", use_container_width=True)
 
-                    with col2:
-                        red_count = sum(1 for r in components_risk if r['color'] == 'RED')
-                        st.metric("🔴 Componenti Alto Rischio", red_count)
+    if analyze_btn and pn_input:
+        component_data = st.session_state.db.lookup_part_number(
+            pn_input, st.session_state.current_client
+        )
 
-                    with col3:
-                        yellow_count = sum(1 for r in components_risk if r['color'] == 'YELLOW')
-                        st.metric("🟡 Componenti Medio Rischio", yellow_count)
+        if component_data:
+            st.success(f"Part Number **{pn_input}** trovato nel database!")
 
-                    with col4:
-                        total_man_hours = sum(r['man_hours'] for r in components_risk)
-                        st.metric("⏱️ Man-Hours Stimati", f"{total_man_hours:,}h")
+            # Calcola rischio v3
+            risk = calculate_component_risk(component_data, st.session_state.run_rate)
 
-                    # Grafico distribuzione rischi
-                    st.subheader("📈 Distribuzione Rischi")
+            # Dashboard principale
+            col1, col2, col3, col4 = st.columns(4)
 
-                    col1, col2 = st.columns(2)
+            with col1:
+                render_risk_badge(risk['risk_level'], risk['score'])
 
-                    with col1:
-                        # Pie chart
-                        risk_counts = {
-                            'Alto (RED)': sum(1 for r in components_risk if r['color'] == 'RED'),
-                            'Medio (YELLOW)': sum(1 for r in components_risk if r['color'] == 'YELLOW'),
-                            'Basso (GREEN)': sum(1 for r in components_risk if r['color'] == 'GREEN')
-                        }
+            with col2:
+                st.metric("Man-Hours Mitigazione", f"{risk['man_hours']}h")
 
-                        fig_pie = px.pie(
-                            values=list(risk_counts.values()),
-                            names=list(risk_counts.keys()),
-                            color=list(risk_counts.keys()),
-                            color_discrete_map={
-                                'Alto (RED)': '#ff4444',
-                                'Medio (YELLOW)': '#ffbb33',
-                                'Basso (GREEN)': '#00C851'
-                            },
-                            title="Distribuzione per Livello di Rischio"
-                        )
-                        st.plotly_chart(fig_pie, use_container_width=True)
+            with col3:
+                st.metric("Fattori Rischio", len(risk['factors']))
 
-                    with col2:
-                        # Bar chart scores
-                        fig_bar = go.Figure()
+            with col4:
+                switching = risk.get('switching_cost', {})
+                st.metric("Switching Cost", f"{switching.get('total_switching_hours', 0):.0f}h")
+                render_switching_badge(switching.get('classification', 'N/A'))
 
-                        colors = ['#ff4444' if r['color'] == 'RED' else '#ffbb33' if r['color'] == 'YELLOW' else '#00C851'
-                                  for r in components_risk]
+            # Dettaglio Geo Risk Frontend/Backend
+            st.subheader("Rischio Geopolitico Frontend/Backend")
+            geo = risk.get('geo_risk', {})
+            col1, col2, col3 = st.columns(3)
 
-                        fig_bar.add_trace(go.Bar(
-                            x=[f"{r['supplier']}<br>{r['part_number']}" for r in components_risk],
-                            y=[r['score'] for r in components_risk],
-                            marker_color=colors,
-                            text=[r['score'] for r in components_risk],
-                            textposition='auto'
-                        ))
+            with col1:
+                render_geo_detail(geo)
 
-                        fig_bar.add_hline(y=55, line_dash="dash", line_color="red", annotation_text="Soglia ALTO")
-                        fig_bar.add_hline(y=30, line_dash="dash", line_color="orange", annotation_text="Soglia MEDIO")
-
-                        fig_bar.update_layout(
-                            title="Score Rischio per Componente",
-                            xaxis_title="Componente",
-                            yaxis_title="Risk Score",
-                            showlegend=False
-                        )
-                        st.plotly_chart(fig_bar, use_container_width=True)
-
-                    # Dettaglio per componente
-                    st.subheader("📝 Dettaglio Rischi per Componente")
-
-                    # Ordina per rischio decrescente
-                    sorted_risks = sorted(enumerate(components_risk), key=lambda x: x[1]['score'], reverse=True)
-
-                    for idx, risk in sorted_risks:
-                        color_emoji = "🔴" if risk['color'] == 'RED' else "🟡" if risk['color'] == 'YELLOW' else "🟢"
-
-                        with st.expander(f"{color_emoji} **{risk['supplier']}** - {risk['part_number']} | Score: {risk['score']} | {risk['category']}", expanded=(risk['color'] == 'RED')):
-                            col1, col2 = st.columns(2)
-
-                            with col1:
-                                st.markdown("**🔍 Fattori di Rischio:**")
-                                if risk['factors']:
-                                    for factor in risk['factors']:
-                                        st.markdown(f"- {factor}")
-                                else:
-                                    st.markdown("- Nessun fattore di rischio significativo")
-
-                            with col2:
-                                st.markdown("**💡 Suggerimenti:**")
-                                if risk['suggestions']:
-                                    for suggestion in risk['suggestions']:
-                                        st.markdown(f"- {suggestion}")
-                                else:
-                                    st.markdown("- Nessuna azione richiesta")
-
-                            st.markdown(f"**⏱️ Stima Man-Hours per mitigazione:** {risk['man_hours']}h")
-
-                    # Export risultati
-                    st.header("📥 Esporta Risultati")
-
-                    # Prepara dataframe output
-                    output_data = []
-                    for i, risk in enumerate(components_risk):
-                        output_data.append({
-                            'Supplier': risk['supplier'],
-                            'Part Number': risk['part_number'],
-                            'Category': risk['category'],
-                            'Risk Score': risk['score'],
-                            'Risk Level': risk['risk_level'],
-                            'Color Code': risk['color'],
-                            'Risk Factors': ' | '.join(risk['factors']),
-                            'Suggestions': ' | '.join(risk['suggestions']),
-                            'Man-Hours Impact': risk['man_hours']
-                        })
-
-                    df_output = pd.DataFrame(output_data)
-
-                    # Crea file Excel per download
-                    output_buffer = BytesIO()
-                    with pd.ExcelWriter(output_buffer, engine='xlsxwriter') as writer:
-                        # Foglio Summary
-                        summary_data = {
-                            'Metric': ['BOM Risk Level', 'BOM Risk Score', 'Total Components',
-                                       'High Risk (RED)', 'Medium Risk (YELLOW)', 'Low Risk (GREEN)',
-                                       'Total Man-Hours Estimated'],
-                            'Value': [bom_risk['risk_level'], f"{bom_risk['score']:.1f}", len(components_risk),
-                                      red_count, yellow_count, len(components_risk) - red_count - yellow_count,
-                                      total_man_hours]
-                        }
-                        pd.DataFrame(summary_data).to_excel(writer, sheet_name='Summary', index=False)
-
-                        # Foglio dettaglio
-                        df_output.to_excel(writer, sheet_name='Component Details', index=False)
-
-                        # Formattazione
-                        workbook = writer.book
-
-                        # Formati colore
-                        red_format = workbook.add_format({'bg_color': '#ff4444', 'font_color': 'white'})
-                        yellow_format = workbook.add_format({'bg_color': '#ffbb33'})
-                        green_format = workbook.add_format({'bg_color': '#00C851', 'font_color': 'white'})
-
-                        worksheet = writer.sheets['Component Details']
-
-                        # Applica formattazione condizionale
-                        for row_num, risk in enumerate(components_risk, start=1):
-                            if risk['color'] == 'RED':
-                                worksheet.set_row(row_num, None, red_format)
-                            elif risk['color'] == 'YELLOW':
-                                worksheet.set_row(row_num, None, yellow_format)
-
-                    st.download_button(
-                        label="📥 Scarica Report Excel",
-                        data=output_buffer.getvalue(),
-                        file_name="supply_chain_risk_report.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-
-                    # Mostra tabella output
-                    with st.expander("👁️ Anteprima Report", expanded=False):
-                        st.dataframe(df_output, use_container_width=True)
-
+            with col2:
+                tech = risk.get('tech_node_risk', {})
+                if tech.get('nm'):
+                    st.markdown(f"**Technology Node:** {tech['nm']}nm")
+                    st.markdown(f"**Rischio:** {tech['level']}")
+                    st.markdown(f"*{tech['reason']}*")
                 else:
-                    st.error("❌ Non riesco a trovare l'header 'Supplier Name' nel foglio INPUTS")
-            else:
-                st.error("❌ Il file non contiene un foglio chiamato 'INPUTS'")
-                st.info(f"Fogli trovati: {xl.sheet_names}")
+                    st.info("Technology node non specificato")
 
-        except Exception as e:
-            st.error(f"❌ Errore nel caricamento del file: {str(e)}")
-            st.exception(e)
+            with col3:
+                st.metric("Geo Score Composito", f"{geo.get('composite_score', 0):.1f}/25")
+                st.markdown(f"Frontend: {geo.get('frontend_score', 0)}/25 (peso 60%)")
+                st.markdown(f"Backend: {geo.get('backend_score', 0)}/15 (peso 40%)")
 
-    else:
-        # Mostra istruzioni
+            # Dettaglio Switching Cost
+            if switching.get('breakdown'):
+                st.subheader("Dettaglio Costo di Switching")
+                for item in switching['breakdown']:
+                    st.markdown(f"- **{item['item']}**: {item['hours']:.0f} ore")
+                st.markdown(f"**Totale: {switching.get('total_switching_hours', 0):.0f} ore - {switching.get('classification', 'N/A')}**")
+
+            # Fattori e suggerimenti
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.subheader("Fattori di Rischio")
+                if risk['factors']:
+                    for factor in risk['factors']:
+                        st.markdown(f"- {factor}")
+                else:
+                    st.info("Nessun fattore di rischio significativo")
+
+            with col2:
+                st.subheader("Suggerimenti")
+                if risk['suggestions']:
+                    for suggestion in risk['suggestions']:
+                        st.markdown(f"- {suggestion}")
+                else:
+                    st.info("Nessuna azione richiesta")
+
+            # Dati componente
+            with st.expander("Dati Componente Completi"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown(f"**Fornitore:** {component_data.get('Supplier Name', 'N/A')}")
+                    st.markdown(f"**Categoria:** {component_data.get('Category of product (MCU, MPU, Sensor, Analogic, Power, Passive Component, Transceiver Wireless)', 'N/A')}")
+                    st.markdown(f"**Lead Time:** {component_data.get('Supplier Lead Time (weeks)', 'N/A')} settimane")
+                    st.markdown(f"**Prezzo:** ${component_data.get('Unit Price ($)', 'N/A')}")
+                with col2:
+                    countries = [c for c in [
+                        component_data.get('Country of Manufacturing Plant 1'),
+                        component_data.get('Country of Manufacturing Plant 2'),
+                        component_data.get('Country of Manufacturing Plant 3'),
+                        component_data.get('Country of Manufacturing Plant 4')
+                    ] if c and str(c).strip()]
+                    st.markdown(f"**Paesi Produzione:** {', '.join(str(c) for c in countries) if countries else 'N/A'}")
+                    st.markdown(f"**Proprietario:** {component_data.get('Proprietary (Y/N)**', 'N/A')}")
+                    st.markdown(f"**Commodity:** {component_data.get('Commodity (Y/N)*', 'N/A')}")
+                    st.markdown(f"**Stand-Alone:** {component_data.get('Stand-Alone Functional Device (Y/N)', 'N/A')}")
+
+        else:
+            st.error(f"Part Number **{pn_input}** non trovato nel database.")
+            st.info("Puoi aggiungere questo part number nella tab 'Gestione Database'")
+
+    elif not pn_input:
         st.info("""
-        👆 **Carica un file Excel** con il foglio 'INPUTS' contenente i dati dei componenti.
+        **Inserisci un Part Number** per analizzare il rischio della supply chain.
 
-        Il file deve avere le seguenti colonne:
-        - Supplier Name
-        - Supplier Part Number
-        - Unit Price ($)
-        - How Many Device of this specific PN are in the BOM?
-        - Category of product
-        - Supplier Lead Time (weeks)
-        - Country of Manufacturing Plant 1/2/3/4
-        - Proprietary (Y/N)
-        - Commodity (Y/N)
-        - Stand-Alone Functional Device (Y/N)
-        - Weeks to qualify
-        - Buffer Stock Units
-        - ... e altri
+        Il sistema calcolerà:
+        - Rischio geopolitico frontend/backend
+        - Technology node risk
+        - Costo di switching (porting SW + qualifica + certificazione)
+        - Buffer stock coverage
+        - Dipendenze funzionali
         """)
 
-        # Download template
-        st.subheader("📄 Scarica Template")
-        st.markdown("Non hai un file? Scarica il template di esempio con 10 componenti:")
+# =============================================================================
+# TAB 2: ANALISI MULTIPLA
+# =============================================================================
 
-        # Questo bottone verrà gestito con il file che creeremo separatamente
-        st.markdown("*Usa il file `BOM_Input_Template_10_Components.xlsx` generato insieme a questa app*")
-
-# Fine tab1
 with tab2:
-    st.header("📊 Motore di Calcolo del Rischio")
-    st.markdown("""
-    Diagramma di flusso del motore di calcolo del rischio che mostra come viene calcolato
-    il rischio per ogni componente e per l'intera BOM.
-    """)
-
-    # Leggi il file mermaid
-    mermaid_file = Path(__file__).parent / "risk_engine_flow.mmd"
-    if mermaid_file.exists():
-        mermaid_code = mermaid_file.read_text(encoding="utf-8")
-
-        # Usa components.html con mermaid.js (versione più vecchia e stabile)
-        components.html(f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <script src="https://cdn.jsdelivr.net/npm/mermaid@9.4.3/dist/mermaid.min.js"></script>
-            <style>
-                body {{ margin: 0; padding: 20px; font-family: Arial, sans-serif; background: white; }}
-                .mermaid {{ background: white; padding: 20px; }}
-            </style>
-        </head>
-        <body>
-            <div class="mermaid" style="background: white;">
-{mermaid_code}
-            </div>
-            <script>
-                mermaid.initialize({{ startOnLoad: true, theme: 'default', securityLevel: 'loose' }});
-            </script>
-        </body>
-        </html>
-        """, height=1000, scrolling=True)
-    else:
-        st.warning("⚠️ File `risk_engine_flow.mmd` non trovato nella stessa cartella dell'app.")
-
-with tab3:
-    st.header("ℹ️ Guida all'uso")
-    st.subheader("Come funziona l'analisi del rischio")
+    st.header("Analisi Multipla Part Numbers")
 
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown("""
-        ### 1. Concentrazione Geografica (25%)
-        - **CRITICO**: Tutti gli stabilimenti in un unico paese asiatico
-        - **ALTO**: Tutti gli stabilimenti in Asia-Pacifico
-        - **MEDIO**: Maggioranza degli stabilimenti in Asia
+        st.subheader("Input Manuale")
+        pn_list_input = st.text_area(
+            "Inserisci Part Numbers (uno per riga)",
+            placeholder="STM32MP157CAC3\nSTPMIC1APQR\nBME280\nMKE02Z64VLD4",
+            height=150
+        )
 
-        ### 2. Single Source (20%)
-        - **CRITICO**: Un solo stabilimento produttivo
-        - **MEDIO**: Solo 2 stabilimenti produttivi
-
-        ### 3. Lead Time (15%)
-        - **CRITICO**: > 16 settimane
-        - **ALTO**: > 10 settimane
-        - **MEDIO**: > 6 settimane
-        """)
+        if st.button("Analizza Lista", type="primary"):
+            if pn_list_input.strip():
+                pns = [pn.strip() for pn in pn_list_input.split('\n') if pn.strip()]
+                batch = run_batch_analysis(pns, st.session_state.current_client, st.session_state.run_rate)
+                st.session_state.batch_results = batch
 
     with col2:
-        st.markdown("""
-        ### 4. Buffer Stock (15%)
-        - **CRITICO**: Buffer insufficiente a coprire il lead time
-        - **MEDIO**: Buffer copre meno di 1.5x il lead time
+        st.subheader("Upload CSV/Excel")
+        uploaded_file = st.file_uploader(
+            "Carica file con lista Part Numbers",
+            type=['csv', 'xlsx', 'xls'],
+            help="Il file deve avere una colonna 'Part Number'"
+        )
 
-        ### 5. Dipendenze (10%)
-        - **ALTO**: Componente dipende da altri componenti
+        if uploaded_file:
+            try:
+                if uploaded_file.name.endswith('.csv'):
+                    df_uploaded = pd.read_csv(uploaded_file)
+                else:
+                    # Cerca il foglio giusto e la riga header automaticamente
+                    # Il BOM template ha fogli multipli (Abstract, INPUTS, OUTPUT)
+                    # e l'header puo' non essere alla riga 0
+                    xl = pd.ExcelFile(uploaded_file)
+                    target_sheet = None
+                    # Cerca foglio INPUTS o il primo foglio con dati utili
+                    for sheet in xl.sheet_names:
+                        if sheet.upper() == 'INPUTS':
+                            target_sheet = sheet
+                            break
+                    if target_sheet is None:
+                        target_sheet = xl.sheet_names[0]
 
-        ### 6. Proprietary/Commodity (10%)
-        - **ALTO**: Componente proprietario
-        - **MEDIO**: Componente non-commodity
+                    df_raw = pd.read_excel(xl, sheet_name=target_sheet, header=None)
+                    header_row = None
+                    for i, row in df_raw.iterrows():
+                        row_str = ' '.join(str(v).lower() for v in row.values if pd.notna(v))
+                        if 'supplier' in row_str and ('part' in row_str or 'name' in row_str):
+                            header_row = i
+                            break
+                    if header_row is not None:
+                        df_uploaded = pd.read_excel(xl, sheet_name=target_sheet, header=header_row)
+                        # Rimuovi righe completamente vuote
+                        df_uploaded = df_uploaded.dropna(how='all')
+                    else:
+                        df_uploaded = pd.read_excel(xl, sheet_name=target_sheet)
 
-        ### 7. Certificazioni (5%)
-        - **MEDIO**: Riqualifica > 12 settimane
+                # Cerca colonna Part Number con varianti comuni
+                pn_col = None
+                for col in df_uploaded.columns:
+                    col_lower = str(col).lower()
+                    if 'part' in col_lower and 'number' in col_lower:
+                        pn_col = col
+                        break
+                    if col_lower in ('mpn', 'pn', 'part_number', 'partnumber'):
+                        pn_col = col
+                        break
+
+                if pn_col:
+                    pns = df_uploaded[pn_col].dropna().astype(str).tolist()
+                    # Filtra valori vuoti o placeholder
+                    pns = [p for p in pns if p.strip() and p.strip().lower() not in ('nan', 'none', '')]
+                    st.success(f"Trovati **{len(pns)}** part numbers nel file")
+
+                    if st.button("Analizza File Upload", type="primary"):
+                        batch = run_batch_analysis(pns, st.session_state.current_client, st.session_state.run_rate)
+                        st.session_state.batch_results = batch
+                else:
+                    st.error("Colonna 'Part Number' non trovata nel file. Colonne trovate: " +
+                             ", ".join(str(c) for c in df_uploaded.columns[:10]))
+            except Exception as e:
+                st.error(f"Errore nel caricamento: {str(e)}")
+
+    # Mostra risultati batch
+    batch = st.session_state.batch_results
+    if batch:
+        st.markdown("---")
+        st.success(f"Trovati **{batch['found_count']}** di **{batch['total_count']}** part numbers")
+
+        # Dashboard metriche
+        col1, col2, col3, col4, col5 = st.columns(5)
+
+        risks = batch['components_risk']
+
+        with col1:
+            red_count = sum(1 for r in risks if r['color'] == 'RED')
+            st.metric("Alto Rischio", red_count)
+
+        with col2:
+            yellow_count = sum(1 for r in risks if r['color'] == 'YELLOW')
+            st.metric("Medio Rischio", yellow_count)
+
+        with col3:
+            green_count = sum(1 for r in risks if r['color'] == 'GREEN')
+            st.metric("Basso Rischio", green_count)
+
+        with col4:
+            total_mh = sum(r['man_hours'] for r in risks)
+            st.metric("Totale Man-Hours", f"{total_mh:,}h")
+
+        with col5:
+            spof_count = len(batch['bom_risk'].get('spofs', []))
+            st.metric("Single Points of Failure", spof_count)
+
+        # Grafici
+        col1, col2 = st.columns(2)
+
+        with col1:
+            risk_counts = {
+                'Alto (RED)': red_count,
+                'Medio (YELLOW)': yellow_count,
+                'Basso (GREEN)': green_count
+            }
+            fig_pie = px.pie(
+                values=list(risk_counts.values()),
+                names=list(risk_counts.keys()),
+                color=list(risk_counts.keys()),
+                color_discrete_map={
+                    'Alto (RED)': '#ff4444',
+                    'Medio (YELLOW)': '#ffbb33',
+                    'Basso (GREEN)': '#00C851'
+                },
+                title="Distribuzione per Livello di Rischio"
+            )
+            st.plotly_chart(fig_pie, use_container_width=True)
+
+        with col2:
+            # Switching cost classification distribution
+            sw_counts = {'TRIVIALE': 0, 'MODERATO': 0, 'COMPLESSO': 0, 'CRITICO': 0}
+            for r in risks:
+                cls = r.get('switching_cost', {}).get('classification', 'TRIVIALE')
+                sw_counts[cls] = sw_counts.get(cls, 0) + 1
+
+            fig_sw = px.pie(
+                values=list(sw_counts.values()),
+                names=list(sw_counts.keys()),
+                color=list(sw_counts.keys()),
+                color_discrete_map={
+                    'TRIVIALE': '#00C851',
+                    'MODERATO': '#ffbb33',
+                    'COMPLESSO': '#ff8800',
+                    'CRITICO': '#ff4444'
+                },
+                title="Distribuzione Costi di Switching"
+            )
+            st.plotly_chart(fig_sw, use_container_width=True)
+
+        # Dettaglio rischi per componente
+        st.subheader("Dettaglio Rischi per Componente")
+
+        for risk in sorted(risks, key=lambda x: x['score'], reverse=True):
+            color_emoji = "🔴" if risk['color'] == 'RED' else "🟡" if risk['color'] == 'YELLOW' else "🟢"
+            sw = risk.get('switching_cost', {})
+            sw_class = sw.get('classification', 'N/A')
+
+            with st.expander(
+                f"{color_emoji} **{risk['part_number']}** | {risk['supplier']} | Score: {risk['score']} | Switching: {sw_class}",
+                expanded=(risk['color'] == 'RED')
+            ):
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    st.markdown("**Fattori di Rischio:**")
+                    if risk['factors']:
+                        for factor in risk['factors']:
+                            st.markdown(f"- {factor}")
+                    else:
+                        st.markdown("- Nessun fattore significativo")
+
+                with col2:
+                    st.markdown("**Suggerimenti:**")
+                    if risk['suggestions']:
+                        for suggestion in risk['suggestions']:
+                            st.markdown(f"- {suggestion}")
+                    else:
+                        st.markdown("- Nessuna azione richiesta")
+
+                with col3:
+                    st.markdown("**Geo Risk Frontend/Backend:**")
+                    geo = risk.get('geo_risk', {})
+                    render_geo_detail(geo)
+                    st.markdown(f"**Man-Hours:** {risk['man_hours']}h")
+                    st.markdown(f"**Switching:** {sw.get('total_switching_hours', 0):.0f}h ({sw_class})")
+
+        # PN non trovati
+        if batch['not_found']:
+            st.warning(f"**{len(batch['not_found'])}** part numbers non trovati: {', '.join(batch['not_found'])}")
+
+# =============================================================================
+# TAB 3: ALBERO DIPENDENZE
+# =============================================================================
+
+with tab3:
+    st.header("Albero di Correlazione Funzionale")
+    st.markdown("""
+    Questo modulo costruisce il grafo delle dipendenze tra i componenti nella BOM.
+    Se un componente **non standalone** (es. PMIC) si blocca, il sistema propaga il rischio
+    a tutti i componenti dipendenti (es. MPU), calcolando uno **score di resilienza di coppia**.
+    """)
+
+    if not HAS_NETWORKX:
+        st.error("Libreria `networkx` non installata. Esegui: `pip install networkx`")
+    else:
+        batch = st.session_state.batch_results
+        if batch:
+            bom_risk = batch['bom_risk']
+
+            # Mermaid graph
+            mermaid_code = bom_risk.get('dependency_graph_mermaid', '')
+            if mermaid_code and 'Nessuna dipendenza' not in mermaid_code and 'networkx non installato' not in mermaid_code:
+                #st.subheader("Grafo Dipendenze")
+                #render_mermaid(mermaid_code, height=500)
+
+                # Single Points of Failure
+                spofs = bom_risk.get('spofs', [])
+                if spofs:
+                    st.subheader("Single Points of Failure")
+                    st.markdown("Componenti la cui indisponibilita' blocca altri componenti:")
+
+                    for spof in spofs:
+                        st.markdown(f"""
+                        <div style="background:#fff3cd; padding:10px; border-radius:5px; margin:5px 0; border-left: 4px solid #ff4444;">
+                            <strong><span class="spof-badge">SPOF</span> {spof['part_number']}</strong> ({spof['supplier']}) -
+                            {spof['category']}<br/>
+                            <em>{spof['impact']}</em>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                # Chain Risk Details
+                chain_risks = bom_risk.get('chain_risks', {})
+                if chain_risks:
+                    st.subheader("Rischio di Catena per Componente")
+
+                    chain_data = []
+                    for pn, chain in chain_risks.items():
+                        chain_data.append({
+                            'Part Number': pn,
+                            'Score Individuale': chain.get('own_score', 0),
+                            'Score Catena': chain.get('chain_score', 0),
+                            'Livello Catena': chain.get('chain_level', 'N/A'),
+                            'Standalone': 'Si' if chain.get('is_standalone') else 'No',
+                            'Dipende da': ', '.join(chain.get('dependencies', [])) or '-',
+                            'Dipendono da questo': ', '.join(chain.get('dependents', [])) or '-',
+                        })
+
+                    if chain_data:
+                        df_chain = pd.DataFrame(chain_data)
+                        df_chain = df_chain.sort_values('Score Catena', ascending=False)
+                        st.dataframe(df_chain, use_container_width=True, hide_index=True)
+
+                    # Rischi di coppia
+                    pair_risks = []
+                    for pn, chain in chain_risks.items():
+                        for pair in chain.get('pair_risks', []):
+                            pair_risks.append(pair)
+
+                    if pair_risks:
+                        st.subheader("Score di Resilienza per Coppia Funzionale")
+                        for pair in pair_risks:
+                            emoji = "🔴" if pair['pair_color'] == 'RED' else "🟡" if pair['pair_color'] == 'YELLOW' else "🟢"
+                            st.markdown(f"{emoji} **{pair['from']}** ← {pair['to']} : Score coppia = **{pair['pair_score']}**")
+            else:
+                st.info("Nessuna dipendenza trovata tra i componenti analizzati. Tutti i componenti sono standalone.")
+        else:
+            st.info("Esegui prima un'**Analisi Multipla** (Tab 2) per visualizzare le dipendenze tra componenti.")
+
+# =============================================================================
+# TAB 4: MAPPA GEOPOLITICA
+# =============================================================================
+
+with tab4:
+    st.header("Mappa Rischio Geopolitico Frontend/Backend")
+    st.markdown("""
+    Questa mappa mostra la distribuzione geografica degli stabilimenti di fabbricazione
+    distinguendo tra **Frontend** (fabbricazione wafer) e **Backend** (assemblaggio/test OSAT).
+    """)
+
+    batch = st.session_state.batch_results
+    if batch:
+        components_data = batch['components_data']
+        components_risk = batch['components_risk']
+
+        # Mappa con Folium
+        try:
+            import folium
+            from streamlit_folium import st_folium
+
+            markers = generate_risk_map_data(components_data)
+
+            if markers:
+                m = folium.Map(location=[20, 80], zoom_start=3, tiles='CartoDB positron')
+
+                for marker in markers:
+                    color = 'red' if marker['risk_score'] >= 20 else 'orange' if marker['risk_score'] >= 10 else 'green'
+                    icon = 'industry' if marker['type'] == 'frontend' else 'cog'
+
+                    popup_html = f"""
+                    <b>{marker['label']}</b><br/>
+                    Tipo: {'Frontend (Wafer Fab)' if marker['type'] == 'frontend' else 'Backend (Assembly/Test)'}<br/>
+                    Paese: {marker['country']}<br/>
+                    Rischio: {marker['risk_level']} ({marker['risk_score']}/25)
+                    """
+
+                    folium.Marker(
+                        location=[marker['lat'], marker['lon']],
+                        popup=folium.Popup(popup_html, max_width=300),
+                        tooltip=marker['label'],
+                        icon=folium.Icon(color=color, icon=icon, prefix='fa')
+                    ).add_to(m)
+
+                st_folium(m, width=None, height=500)
+            else:
+                st.info("Nessun dato geografico disponibile per la mappatura")
+        except ImportError:
+            st.warning("Librerie `folium` e `streamlit-folium` necessarie per la mappa. Esegui: `pip install folium streamlit-folium`")
+
+        # Tabella rischio per regione
+        st.subheader("Analisi Rischio per Regione")
+
+        geo_table = []
+        for i, risk in enumerate(components_risk):
+            geo = risk.get('geo_risk', {})
+            tech = risk.get('tech_node_risk', {})
+            geo_table.append({
+                'Part Number': risk.get('part_number', 'N/A'),
+                'Fornitore': risk.get('supplier', 'N/A'),
+                'Frontend': geo.get('frontend_country', 'N/A').title(),
+                'Frontend Risk': geo.get('frontend_level', 'N/A'),
+                'Backend': geo.get('backend_country', 'N/A').title(),
+                'Backend Risk': geo.get('backend_level', 'N/A'),
+                'Tech Node': f"{tech.get('nm', 'N/A')}nm" if tech.get('nm') else 'N/A',
+                'Tech Risk': tech.get('level', 'N/A'),
+                'Geo Score': geo.get('composite_score', 0),
+            })
+
+        if geo_table:
+            df_geo = pd.DataFrame(geo_table)
+            df_geo = df_geo.sort_values('Geo Score', ascending=False)
+            st.dataframe(df_geo, use_container_width=True, hide_index=True)
+
+            # Grafico a barre
+            fig_geo = go.Figure()
+            colors = ['#ff4444' if row['Geo Score'] >= 20 else '#ffbb33' if row['Geo Score'] >= 12 else '#00C851'
+                      for _, row in df_geo.iterrows()]
+
+            fig_geo.add_trace(go.Bar(
+                x=df_geo['Part Number'],
+                y=df_geo['Geo Score'],
+                marker_color=colors,
+                text=df_geo['Geo Score'].round(1),
+                textposition='auto'
+            ))
+            fig_geo.update_layout(
+                title="Geo Risk Score per Componente (Frontend/Backend Composito)",
+                xaxis_title="Componente",
+                yaxis_title="Geo Score",
+                showlegend=False
+            )
+            fig_geo.add_hline(y=20, line_dash="dash", line_color="red", annotation_text="CRITICO")
+            fig_geo.add_hline(y=12, line_dash="dash", line_color="orange", annotation_text="ALTO")
+            st.plotly_chart(fig_geo, use_container_width=True)
+    else:
+        st.info("Esegui prima un'**Analisi Multipla** (Tab 2) per visualizzare la mappa geopolitica.")
+
+# =============================================================================
+# TAB 5: COSTI DI SWITCHING
+# =============================================================================
+
+with tab5:
+    st.header("Analisi Costi di Switching")
+    st.markdown("""
+    Stima del costo temporale (ore-uomo) per sostituire ogni componente, basato su:
+    - **SW Porting**: dimensione codice x complessita' OS (Baremetal/RTOS/Linux)
+    - **Qualifica**: settimane di qualifica x 40 ore/settimana
+    - **Certificazione**: moltiplicatore per tipo certificazione (AEC-Q100, MIL-STD, etc.)
+    """)
+
+    batch = st.session_state.batch_results
+    if batch:
+        components_risk = batch['components_risk']
+
+        # Tabella principale
+        sw_table = []
+        for risk in components_risk:
+            sw = risk.get('switching_cost', {})
+            sw_table.append({
+                'Part Number': risk.get('part_number', 'N/A'),
+                'Fornitore': risk.get('supplier', 'N/A'),
+                'Categoria': risk.get('category', 'N/A'),
+                'OS': sw.get('os_type', 'N/A'),
+                'SW Size (KB)': sw.get('sw_size_kb', 0),
+                'Porting (h)': sw.get('sw_porting_hours', 0),
+                'Qualifica (h)': sw.get('qualification_hours', 0),
+                'Cert. Mult.': sw.get('certification_multiplier', 1.0),
+                'Totale (h)': sw.get('total_switching_hours', 0),
+                'Classificazione': sw.get('classification', 'N/A'),
+            })
+
+        df_sw = pd.DataFrame(sw_table)
+        df_sw = df_sw.sort_values('Totale (h)', ascending=False)
+
+        # Metriche riassuntive
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            critical = sum(1 for r in sw_table if r['Classificazione'] == 'CRITICO')
+            st.metric("CRITICO", critical)
+        with col2:
+            complex_ = sum(1 for r in sw_table if r['Classificazione'] == 'COMPLESSO')
+            st.metric("COMPLESSO", complex_)
+        with col3:
+            moderate = sum(1 for r in sw_table if r['Classificazione'] == 'MODERATO')
+            st.metric("MODERATO", moderate)
+        with col4:
+            trivial = sum(1 for r in sw_table if r['Classificazione'] == 'TRIVIALE')
+            st.metric("TRIVIALE", trivial)
+
+        # Tabella
+        st.dataframe(df_sw, use_container_width=True, hide_index=True)
+
+        # Grafico a barre orizzontali
+        fig_sw = go.Figure()
+
+        color_map = {
+            'TRIVIALE': '#00C851', 'MODERATO': '#ffbb33',
+            'COMPLESSO': '#ff8800', 'CRITICO': '#ff4444'
+        }
+        colors = [color_map.get(row['Classificazione'], '#888') for _, row in df_sw.iterrows()]
+
+        fig_sw.add_trace(go.Bar(
+            y=df_sw['Part Number'],
+            x=df_sw['Totale (h)'],
+            orientation='h',
+            marker_color=colors,
+            text=[f"{h:.0f}h ({c})" for h, c in zip(df_sw['Totale (h)'], df_sw['Classificazione'])],
+            textposition='auto'
+        ))
+        fig_sw.update_layout(
+            title="Costo di Switching per Componente (ore-uomo)",
+            xaxis_title="Ore-Uomo",
+            yaxis_title="Componente",
+            showlegend=False,
+            height=max(300, len(df_sw) * 40 + 100),
+        )
+        fig_sw.add_vline(x=100, line_dash="dash", line_color="green", annotation_text="TRIVIALE")
+        fig_sw.add_vline(x=500, line_dash="dash", line_color="orange", annotation_text="MODERATO")
+        fig_sw.add_vline(x=2000, line_dash="dash", line_color="red", annotation_text="COMPLESSO")
+        st.plotly_chart(fig_sw, use_container_width=True)
+
+        # Dettaglio breakdown per componenti critici
+        critical_components = [r for r in components_risk if r.get('switching_cost', {}).get('classification') in ('CRITICO', 'COMPLESSO')]
+        if critical_components:
+            st.subheader("Breakdown Componenti Critici/Complessi")
+            for risk in critical_components:
+                sw = risk.get('switching_cost', {})
+                with st.expander(f"**{risk['part_number']}** - {sw.get('classification', 'N/A')} ({sw.get('total_switching_hours', 0):.0f}h)"):
+                    for item in sw.get('breakdown', []):
+                        st.markdown(f"- {item['item']}: **{item['hours']:.0f}h**")
+                    st.markdown(f"**{sw.get('description', '')}**")
+    else:
+        st.info("Esegui prima un'**Analisi Multipla** (Tab 2) per visualizzare i costi di switching.")
+
+# =============================================================================
+# TAB 6: GESTIONE DATABASE
+# =============================================================================
+
+with tab6:
+    st.header("Gestione Database Part Numbers")
+
+    tab6_1, tab6_2, tab6_3 = st.tabs(["Statistiche", "Aggiungi Part Number", "Gestione Clienti"])
+
+    with tab6_1:
+        st.subheader("Statistiche Database")
+
+        stats = st.session_state.db.get_stats()
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Totale Part Numbers", stats['total_part_numbers'])
+        with col2:
+            st.metric("Totale Clienti", stats['total_clients'])
+        with col3:
+            st.metric("Record Cliente", stats['total_client_records'])
+
+        st.markdown("---")
+
+        if stats['categories']:
+            st.subheader("Part Numbers per Categoria")
+            df_cat = pd.DataFrame(list(stats['categories'].items()), columns=['Categoria', 'Count'])
+            st.bar_chart(df_cat.set_index('Categoria'))
+
+        if stats['suppliers']:
+            st.subheader("Top Fornitori")
+            df_sup = pd.DataFrame(list(stats['suppliers'].items()), columns=['Fornitore', 'Count']).head(10)
+            st.dataframe(df_sup, use_container_width=True)
+
+    with tab6_2:
+        st.subheader("Aggiungi Nuovo Part Number")
+
+        with st.form("add_new_pn_form"):
+            col1, col2 = st.columns(2)
+
+            with col1:
+                new_pn = st.text_input("Part Number *")
+                new_supplier = st.text_input("Supplier Name *")
+                new_category = st.selectbox(
+                    "Category *",
+                    ["MCU", "MPU", "Sensor", "Analogic", "Power", "Passive Component", "Transceiver Wireless"]
+                )
+
+            with col2:
+                price = st.number_input("Unit Price ($)", min_value=0.0, value=0.0, step=0.01)
+                lead_time = st.number_input("Lead Time (weeks) *", min_value=0, value=8)
+                weeks_qualify = st.number_input("Weeks to Qualify", min_value=0, value=12)
+
+            st.markdown("#### Paesi Produzione")
+            col1, col2 = st.columns(2)
+            with col1:
+                country1 = st.text_input("Plant 1 Country *")
+                country2 = st.text_input("Plant 2 Country")
+            with col2:
+                country3 = st.text_input("Plant 3 Country")
+                country4 = st.text_input("Plant 4 Country")
+
+            st.markdown("#### Geo Risk Frontend/Backend (v3.0)")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                frontend_country = st.text_input("Frontend Country (wafer fab)")
+                backend_country = st.text_input("Backend Country (assembly/test)")
+            with col2:
+                tech_node = st.text_input("Technology Node (es. 28nm, 180nm)")
+            with col3:
+                ems_used = st.selectbox("EMS Used", ["N", "Y"])
+                ems_name = st.text_input("EMS Name (se usato)")
+
+            st.markdown("#### SW/Firmware (v3.0)")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                sw_size = st.number_input("SW Code Size (KB)", min_value=0, value=0)
+            with col2:
+                os_type = st.selectbox("OS Type", ["Baremetal", "RTOS", "FreeRTOS", "Linux", "Android"])
+            with col3:
+                memory_type = st.selectbox("Memory Type", ["Embedded", "External"])
+
+            st.markdown("#### Caratteristiche")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                proprietary = st.selectbox("Proprietary", ["N", "Y"])
+            with col2:
+                commodity = st.selectbox("Commodity", ["Y", "N"])
+            with col3:
+                standalone = st.selectbox("Stand-Alone", ["Y", "N"])
+
+            st.markdown("#### Dati Cliente")
+            col1, col2 = st.columns(2)
+            with col1:
+                qty_bom = st.number_input("Qty in BOM", min_value=1, value=1)
+            with col2:
+                buffer_stock = st.number_input("Buffer Stock Units", min_value=0, value=0)
+
+            certification = st.text_input("Certification/Qualification (optional)")
+            dependency = st.text_input("Dependencies (optional)")
+
+            submitted = st.form_submit_button("Salva Part Number", type="primary")
+
+            if submitted:
+                if not new_pn or not new_supplier or not country1:
+                    st.error("Part Number, Supplier Name e almeno un paese sono obbligatori")
+                else:
+                    new_pn_data = {
+                        'Supplier Name': new_supplier,
+                        'Category of product (MCU, MPU, Sensor, Analogic, Power, Passive Component, Transceiver Wireless)': new_category,
+                        'Country of Manufacturing Plant 1': country1,
+                        'Country of Manufacturing Plant 2': country2 or '',
+                        'Country of Manufacturing Plant 3': country3 or '',
+                        'Country of Manufacturing Plant 4': country4 or '',
+                        'Supplier Lead Time (weeks)': lead_time,
+                        'Unit Price ($)': price,
+                        'Weeks to qualify': weeks_qualify,
+                        'Proprietary (Y/N)**': proprietary,
+                        'Commodity (Y/N)*': commodity,
+                        'Stand-Alone Functional Device (Y/N)': standalone,
+                        'How Many Device of this specific PN are in the BOM?': qty_bom,
+                        'If Dedicated Buffer Stock Units to the supplier is yes specify the number of Units': buffer_stock,
+                        'Specify Certification/Qualification': certification or '',
+                        'In case answer on Column C is Y, Which other device in the BOM is necessary to run the PN on Column B? (e.g. PMIC for MPU, Memory for MPU)': dependency or '',
+                        # v3.0 fields
+                        'Frontend_Country': frontend_country or '',
+                        'Backend_Country': backend_country or '',
+                        'Technology_Node': tech_node or '',
+                        'SW_Code_Size_KB': sw_size,
+                        'OS_Type': os_type,
+                        'Memory_Type': memory_type,
+                        'EMS_Used': ems_used,
+                        'EMS_Name': ems_name or '',
+                    }
+
+                    if st.session_state.db.add_part_number(new_pn, new_pn_data, st.session_state.current_client):
+                        st.success(f"Part Number **{new_pn}** salvato con successo!")
+                    else:
+                        st.error("Errore nel salvataggio")
+
+        st.markdown("---")
+        st.subheader("Ricerca Part Numbers")
+        search_pattern = st.text_input("Cerca per pattern")
+        if search_pattern:
+            results = st.session_state.db.search_similar(search_pattern)
+            if results:
+                st.dataframe(pd.DataFrame(results), use_container_width=True)
+            else:
+                st.info("Nessun risultato")
+
+    with tab6_3:
+        st.subheader("Gestione Clienti")
+
+        clients = st.session_state.db.get_all_clients()
+        if clients:
+            st.dataframe(pd.DataFrame(clients), use_container_width=True)
+
+        st.markdown("---")
+        st.subheader("Aggiungi Nuovo Cliente")
+
+        with st.form("add_client_form"):
+            new_client_id = st.text_input("Client ID *")
+            new_client_name = st.text_input("Client Name *")
+            new_client_run_rate = st.number_input("Default Run Rate", min_value=1, value=5000)
+
+            submitted = st.form_submit_button("Aggiungi Cliente", type="primary")
+
+            if submitted:
+                if not new_client_id or not new_client_name:
+                    st.error("Client ID e Client Name sono obbligatori")
+                elif st.session_state.db.add_client(new_client_id, new_client_name, new_client_run_rate):
+                    st.success(f"Cliente **{new_client_name}** aggiunto con successo!")
+                    st.rerun()
+                else:
+                    st.error("Errore nell'aggiunta del cliente")
+
+
+# =============================================================================
+# TAB 7: SIMULATORE WHAT-IF
+# =============================================================================
+COUNTRY_BLOCK_CONFIG = {
+    'Taiwan': {'default_weeks': 8, 'risk_multiplier': 3.0},
+    'China': {'default_weeks': 6, 'risk_multiplier': 2.5},
+    'Korea': {'default_weeks': 4, 'risk_multiplier': 2.0},
+    'Japan': {'default_weeks': 4, 'risk_multiplier': 1.8},
+    'Malaysia': {'default_weeks': 3, 'risk_multiplier': 1.5},
+    'Singapore': {'default_weeks': 3, 'risk_multiplier': 1.3},
+    'Philippines': {'default_weeks': 3, 'risk_multiplier': 1.3},
+}
+
+with tab7:
+    st.header("Simulatore What-If - Scenari di Disruption")
+    st.markdown("""
+    Questo modulo permette di simulare l'impatto di scenari di disruption
+    sulla supply chain e vedere come cambia il rischio.
+
+    **Scenari supportati:**
+    - Blocco geografico (es. Taiwan bloccata 4-8 settimane)
+    - Aumento lead time (% su tutti i fornitori)
+    - Interruzione fornitore specifico
+
+    Il simulatore calcola:
+    - Impatto su buffer stock (quando si esaurisce)
+    - Variazione del rischio complessivo
+    - Impatto finanziario stimato
+    """)
+
+    # -------------------------------------------------------------------------
+    # VERIFICA DATI
+    # -------------------------------------------------------------------------
+    batch = st.session_state.batch_results
+
+    if not batch:
+        st.info("""
+        Esegui prima un'**Analisi Multipla** (Tab 2) per caricare i dati della BOM.
+        Il simulatore ha bisogno dei componenti e dei loro rischi calcolati.
         """)
+    else:
+        components_data = batch['components_data']
+        components_risk = batch['components_risk']
+
+        col1, col2 = st.columns([2, 1])
+
+        # =====================================================================
+        # COLONNA 1: CONFIGURAZIONE SCENARIO
+        # =====================================================================
+        with col1:
+            st.subheader("Configurazione Scenario")
+
+            scenario_option = st.radio(
+                "Tipo di Scenario",
+                options=["Predefinito", "Personalizzato"],
+                horizontal=True,
+                label_visibility="collapsed",
+                key="scenario_option"
+            )
+
+            scenario_config = None
+
+            # ------------------------- SCENARI PREDEFINITI --------------------
+            if scenario_option == "Predefinito":
+                predefined = get_predefined_scenarios()
+                scenario_names = [s['name'] for s in predefined]
+
+                selected_name = st.selectbox(
+                    "Seleziona Scenario",
+                    options=scenario_names,
+                    help="Scegli tra gli scenari predefiniti",
+                    key="predefined_select"
+                )
+
+                # recupera sempre lo scenario selezionato
+                selected_scenario = next(
+                    s for s in predefined if s['name'] == selected_name
+                )
+
+                if selected_scenario['type'] == 'country_block':
+                    param_text = selected_scenario.get('country', '')
+                elif selected_scenario['type'] == 'lead_time_increase':
+                    param_text = f"{selected_scenario.get('increase_percent', 0)}%"
+                elif selected_scenario['type'] == 'supplier_outage':
+                    param_text = selected_scenario.get('supplier', '')
+                else:
+                    param_text = ""
+
+                st.info(f"""
+                **Scenario**: {selected_scenario['name']}
+                - Tipo: {selected_scenario.get('type', '')}
+                - Parametro: {param_text}
+                - Durata: {selected_scenario['weeks']} settimane
+                """)
+
+                scenario_config = {
+                    'type': selected_scenario.get('type', ''),
+                    'description': selected_scenario.get(
+                        'description',
+                        selected_scenario.get('name', '')
+                    ),
+                    'weeks': selected_scenario.get('weeks', 0),
+                }
+
+                if selected_scenario['type'] == 'country_block':
+                    scenario_config['country'] = selected_scenario.get('country', '')
+                    scenario_config['risk_multiplier'] = selected_scenario.get('risk_multiplier', 2.0)
+                elif selected_scenario['type'] == 'lead_time_increase':
+                    scenario_config['increase_percent'] = selected_scenario.get('increase_percent', 50)
+                    scenario_config['risk_multiplier'] = selected_scenario.get('risk_multiplier', 1.5)
+                elif selected_scenario['type'] == 'supplier_outage':
+                    scenario_config['supplier'] = selected_scenario.get('supplier', '')
+
+                st.session_state.predefined_scenario = scenario_config
+
+            # ------------------------ SCENARI PERSONALIZZATI -------------------
+            else:
+                st.write("**Configurazione Scenario Personalizzato**")
+
+                def _apply_custom(form_data: Dict[str, Any]):
+                    st.session_state.custom_scenario = form_data
+
+                with st.form("custom_scenario_form"):
+                    scenario_type_label = st.selectbox(
+                        "Tipo Disruption",
+                        options=list(SCENARIO_TYPES.values()),
+                        help="Seleziona il tipo di scenario",
+                        key="custom_type"
+                    )
+
+                    form_data: Dict[str, Any] = {}
+
+                    if scenario_type_label == "Blocco Paese":
+                        country = st.selectbox(
+                            "Paese",
+                            options=list(COUNTRY_BLOCK_CONFIG.keys()),
+                            help="Seleziona il paese da simulare bloccato",
+                            key="custom_country"
+                        )
+                        default_weeks = COUNTRY_BLOCK_CONFIG[country]['default_weeks']
+                        risk_multiplier = COUNTRY_BLOCK_CONFIG[country]['risk_multiplier']
+
+                        weeks = st.slider(
+                            "Durata Blocco (settimane)",
+                            min_value=1, max_value=52,
+                            value=default_weeks, step=1,
+                            key="custom_weeks_country"
+                        )
+                        form_data = {
+                            'type': 'country_block',
+                            'country': country,
+                            'weeks': weeks,
+                            'description': f"{country} bloccato per {weeks} settimane",
+                            'risk_multiplier': risk_multiplier,
+                        }
+
+                    elif scenario_type_label == "Interruzione Fornitore":
+                        suppliers_list = sorted(list(set(
+                            str(c.get('Supplier Name', '')) for c in components_data
+                        )))
+                        supplier = st.selectbox(
+                            "Fornitore",
+                            options=suppliers_list,
+                            help="Seleziona il fornitore da simulare interrotto",
+                            key="custom_supplier"
+                        )
+                        weeks = st.slider(
+                            "Durata Interruzione (settimane)",
+                            min_value=1, max_value=52, value=4, step=1,
+                            key="custom_weeks_supplier"
+                        )
+                        form_data = {
+                            'type': 'supplier_outage',
+                            'supplier': supplier,
+                            'weeks': weeks,
+                            'description': f"Fornitore {supplier} interrotto per {weeks} settimane",
+                        }
+
+                    elif scenario_type_label == "Aumento Lead Time":
+                        increase_percent = st.slider(
+                            "Aumento Lead Time (%)",
+                            min_value=10, max_value=200, value=50, step=10,
+                            key="custom_increase_percent"
+                        )
+                        weeks = st.slider(
+                            "Durata Aumento (settimane)",
+                            min_value=1, max_value=52, value=4, step=1,
+                            key="custom_weeks_lead"
+                        )
+                        form_data = {
+                            'type': 'lead_time_increase',
+                            'increase_percent': increase_percent,
+                            'weeks': weeks,
+                            'description': f"Aumento lead time del {increase_percent}% per {weeks} settimane",
+                            'risk_multiplier': 1.5,
+                        }
+
+                    st.form_submit_button(
+                        "Applica",
+                        type="primary",
+                        on_click=_apply_custom,
+                        args=(form_data,)
+                    )
+
+                # dopo il submit, scenario_config è subito disponibile
+                scenario_config = st.session_state.get('custom_scenario', None)
+
+        # =====================================================================
+        # COLONNA 2: FILTRO COMPONENTI E AVVIO SIMULAZIONE
+        # =====================================================================
+        with col2:
+            st.subheader("Componenti Specifici (Opzionale)")
+
+            if scenario_config is not None and scenario_config.get('type'):
+                scenario_type = scenario_config['type']
+
+                if scenario_type == 'country_block':
+                    country_filter = scenario_config.get('country', '')
+                    st.info(f"Mostrando solo componenti con Frontend/Backend in **{country_filter}**")
+                    filtered_indices = [
+                        i for i, c in enumerate(components_data)
+                        if _is_component_affected(c, scenario_config)
+                    ]
+
+                elif scenario_type == 'supplier_outage':
+                    supplier_filter = scenario_config.get('supplier', '')
+                    st.info(f"Mostrando solo componenti del fornitore **{supplier_filter}**")
+                    filtered_indices = [
+                        i for i, c in enumerate(components_data)
+                        if _is_component_affected(c, scenario_config)
+                    ]
+
+                else:
+                    # lead_time_increase / demand_surge: tutti affetti
+                    filtered_indices = list(range(len(components_data)))
+            else:
+                filtered_indices = list(range(len(components_data)))
+
+            if filtered_indices:
+                component_names = [
+                    components_data[i].get('Part Number', f'PN_{i}')
+                    for i in filtered_indices
+                ]
+                selected_pn = st.selectbox(
+                    "Componente Specifico (Analizza Tutti)",
+                    options=["Analizza Tutti"] + component_names,
+                    help="Seleziona un componente per vedere dettaglio",
+                    key="component_select"
+                )
+
+                if selected_pn == "Analizza Tutti":
+                    selected_indices = filtered_indices
+                else:
+                    idx_in_filtered = component_names.index(selected_pn)
+                    selected_indices = [filtered_indices[idx_in_filtered]]
+            else:
+                st.info("Nessun componente affetto da questo scenario")
+                selected_indices = []
+
+            if st.button("Esegui Simulazione", type="primary", key="run_simulation"):
+                if not scenario_config:
+                    st.error("Per favore, configura uno scenario prima di eseguire la simulazione")
+                elif not selected_indices:
+                    st.warning("Seleziona almeno un componente da analizzare")
+                else:
+                    filtered_components = [components_data[i] for i in selected_indices]
+                    filtered_risks = [components_risk[i] for i in selected_indices]
+
+                    result = simulate_disruption(
+                        filtered_components,
+                        filtered_risks,
+                        scenario_config,
+                        st.session_state.run_rate
+                    )
+                    st.session_state.simulation_result = result
+
+        # =====================================================================
+        # RISULTATI
+        # =====================================================================
+        if 'simulation_result' in st.session_state:
+            result = st.session_state.simulation_result
+            summary = result['summary']
+            scenario_info = result['scenario_info']
+
+            st.markdown("---")
+            st.subheader("Risultato Simulazione")
+
+            col_result1, col_result2 = st.columns(2)
+
+            with col_result1:
+                st.markdown(f"""
+                **Tipo**: {scenario_info['description']}
+                **Durata**: {scenario_info['duration_weeks']} settimane
+                **Parametro**: {scenario_info['parameter']}
+                """)
+
+                st.metric(
+                    "Componenti Affetti",
+                    f"{summary['affected_count']}/{summary['total_components']}"
+                )
+                st.metric("Componenti Critici", summary['critical_count'])
+
+            with col_result2:
+                delta = summary['score_change']
+                delta_color = "normal" if delta == 0 else "inverse" if delta < 0 else "off"
+
+                st.metric(
+                    "Rischio Complessivo",
+                    f"{summary['avg_adjusted_score']} ({summary['overall_level']})",
+                    delta=delta,
+                    delta_color=delta_color
+                )
+
+            st.markdown("### Impatto Finanziario")
+
+            col_fin1, col_fin2, col_fin3 = st.columns(3)
+
+            with col_fin1:
+                st.metric(
+                    "Valore BOM a Rischio",
+                    f"${summary['total_bom_value']:,.2f}"
+                )
+
+            with col_fin2:
+                weeks_lost = summary.get('total_production_lost_weeks', 0)
+                st.metric(
+                    "Produzione Persa",
+                    f"{weeks_lost:.1f} settimane"
+                )
+
+            with col_fin3:
+                revenue_loss = summary.get('total_financial_impact', 0)
+                st.metric(
+                    "Impatto Stimato",
+                    f"${revenue_loss:,.2f}"
+                )
+
+            if result['impacted_components']:
+                st.markdown("### Dettaglio Componenti Affetti")
+
+                detail_rows = []
+                for comp in result['impacted_components']:
+                    detail_rows.append({
+                        'Part Number': comp['part_number'],
+                        'Fornitore': comp['supplier'],
+                        'Score Orig.': comp['original_score'],
+                        'Score Nuovo': comp['adjusted_score'],
+                        'Variazione': comp['score_change'],
+                        'Buffer Orig. (sett)': comp['original_buffer_weeks'],
+                        'Buffer Nuovo (sett)': comp['remaining_buffer_weeks'],
+                        'Sett. Perse': comp['weeks_lost'],
+                        'Impatto $': comp['financial_impact'],
+                    })
+
+                df_detail = pd.DataFrame(detail_rows)
+                df_detail = df_detail.sort_values('Impatto $', ascending=False)
+
+                def color_score(val):
+                    try:
+                        v = float(val)
+                    except Exception:
+                        return ''
+                    if v >= 55:
+                        return 'background-color: #ff4444; color: white;'
+                    elif v >= 30:
+                        return 'background-color: #ffbb33; color: black;'
+                    else:
+                        return 'background-color: #00C851; color: white;'
+
+                st.dataframe(
+                    df_detail.style.applymap(
+                        color_score,
+                        subset=['Score Orig.', 'Score Nuovo']
+                    ),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+            critical = result.get('critical_components', [])
+            if critical:
+                st.markdown("### Componenti Critici")
+                st.warning("Questi componenti esauriscono il buffer durante la disruption:")
+
+                for comp in critical[:10]:
+                    depletion = comp['depletion_date'] or 'Immediato'
+                    st.markdown(f"""
+                    - **{comp['part_number']}** ({comp['supplier']})  
+                      - Esaurisce: {depletion}  
+                      - Sett. Rimanenti: {comp['remaining_buffer_weeks']:.1f}
+                    """)
+
+                if len(critical) > 10:
+                    st.markdown(f"... e altri {len(critical) - 10} componenti")
+
+            st.markdown("---")
+            st.info("""
+            **Nota**: Per vedere l'impatto su tutta la BOM, esegui una nuova **Analisi Multipla**
+            con questo scenario applicato.
+            """)
+
+
+# =============================================================================
+# TAB 8: GUIDA
+# =============================================================================
+
+with tab8:
+    st.header("Guida all'uso v3.0")
+
+    st.markdown("""
+    ## Architettura del Sistema
+
+    La piattaforma v3.0 aggiunge tre moduli analitici alla base v2.0:
+
+    ### Modulo 1: Albero Dipendenze (Functional Chain Risk)
+    - Costruisce un **grafo direzionale** delle dipendenze tra componenti
+    - Identifica i **Single Points of Failure** (SPOF)
+    - Propaga il rischio lungo le catene: se il PMIC e' ad alto rischio,
+      anche l'MPU che ne dipende eredita quello score
+    - Calcola **score di coppia**: max(risk_A, risk_B) per componenti collegati
+
+    ### Modulo 2: Rischio Geopolitico Frontend/Backend
+    - **Frontend** (60% del peso): dove viene fabbricato il wafer (es. TSMC Taiwan)
+    - **Backend** (40% del peso): dove avviene assemblaggio/test (es. ASE Malaysia)
+    - **Technology Node Risk**: nodi <= 7nm (CRITICO, solo TSMC/Samsung) fino a >= 130nm (BASSO)
+
+    | Regione | Frontend Risk | Backend Risk |
+    |---------|-------------|-------------|
+    | Taiwan | CRITICO (25) | MEDIO (10) |
+    | China | ALTO (20) | MEDIO-ALTO (12) |
+    | Korea | MEDIO-ALTO (15) | MEDIO-BASSO (8) |
+    | Malaysia | MEDIO (10) | ALTO (15) |
+    | USA/EU | BASSO (3-5) | BASSO (2-3) |
+
+    ### Modulo 3: Costi di Switching
+    Stima le ore-uomo per sostituire un componente:
+
+    | OS Type | Rate (ore/KB) | Esempio 2048KB |
+    |---------|--------------|----------------|
+    | Baremetal | 0.5 | 1,024h |
+    | RTOS | 1.0 | 2,048h |
+    | Linux | 2.0 | 4,096h |
+
+    Moltiplicatori certificazione:
+    - AEC-Q100 (automotive): x1.5
+    - MIL-STD (military): x2.0
+    - IEC 62443 (cybersecurity): x1.3
+
+    Classificazione:
+    - **TRIVIALE** (<100h): componente passivo, sostituzione diretta
+    - **MODERATO** (100-500h): MCU semplice con baremetal
+    - **COMPLESSO** (500-2000h): MCU con RTOS o componente con certificazioni
+    - **CRITICO** (>2000h): MPU con Linux, equivale a redesign completo
+
+    ### Fattori di Rischio (7 + 1 informativo)
+
+    | # | Fattore | Peso | Novita' v3.0 |
+    |---|---------|------|-------------|
+    | 1 | Concentrazione Geografica | 25% | Frontend/Backend separati |
+    | 2 | Single Source | 20% | - |
+    | 3 | Lead Time | 15% | - |
+    | 4 | Buffer Stock | 15% | Riduzione proporzionale |
+    | 5 | Dipendenze | 10% | Chain risk propagation |
+    | 6 | Proprietary/Commodity | 10% | - |
+    | 7 | Certificazioni | 5% | - |
+    | + | Technology Node | +5 max | NUOVO |
+    | info | Switching Cost | n/a | NUOVO (informativo) |
+
+    ### Flusso di Lavoro Consigliato
+    1. Seleziona il cliente dalla sidebar
+    2. Vai su **Analisi Multipla** e inserisci i Part Numbers della BOM
+    3. Analizza i risultati nei tab dedicati:
+       - **Albero Dipendenze**: per capire le catene funzionali
+       - **Mappa Geopolitica**: per visualizzare i rischi per regione
+       - **Costi di Switching**: per prioritizzare le azioni di mitigazione
+    """)
 
     st.markdown("---")
     st.subheader("Classificazione Finale")
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.markdown("""
-        <div class="risk-red">
-            <h3>🔴 ALTO</h3>
-            <p>Score ≥ 55</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown('<div class="risk-red"><h3>ALTO</h3><p>Score >= 55</p></div>', unsafe_allow_html=True)
     with col2:
-        st.markdown("""
-        <div class="risk-yellow">
-            <h3>🟡 MEDIO</h3>
-            <p>Score 30-54</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown('<div class="risk-yellow"><h3>MEDIO</h3><p>Score 30-54</p></div>', unsafe_allow_html=True)
     with col3:
-        st.markdown("""
-        <div class="risk-green">
-            <h3>🟢 BASSO</h3>
-            <p>Score < 30</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown('<div class="risk-green"><h3>BASSO</h3><p>Score < 30</p></div>', unsafe_allow_html=True)
 
-# Footer
+# =============================================================================
+# FOOTER
+# =============================================================================
+
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: gray;'>
-    Supply Chain Risk Assessment Tool v1.0 | 
-    Basato su best practices per la gestione del rischio nella supply chain elettronica
+    Supply Chain Resilience Platform v3.0 |
+    Analisi Deterministica con Dipendenze, Geo-Risk Frontend/Backend e Costi di Switching
 </div>
 """, unsafe_allow_html=True)

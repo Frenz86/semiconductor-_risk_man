@@ -1,35 +1,35 @@
 flowchart TD
-    Start(["`**calculate_component_risk**
-    (row, run_rate)`"]) --> Init["`score = 0
+    Start(["**calculate_component_risk**
+    (row, run_rate)"]) --> Init["score = 0
     factors = []
     suggestions = []
-    man_hours = 0`"]
+    man_hours = 0"]
 
     Init --> ExtractCountries[/"Estrai paesi da
     Manufacturing Plant 1..4"/]
 
-    ExtractCountries --> R1{"`**1. CONCENTRAZIONE
+    ExtractCountries --> R1{"**1. CONCENTRAZIONE
     GEOGRAFICA (25%)**
-    countries non vuoto?`"}
+    countries non vuoto?"}
 
     R1 -- No --> R2
     R1 -- Sì --> R1calc["Calcola unique_countries
     e asia_count"]
-    R1calc --> R1a{"`1 solo paese
-    AND in Asia?`"}
+    R1calc --> R1a{"1 solo paese
+    AND in Asia?"}
     R1a -- Sì --> R1_25["+25 pts | CRITICO
     +40 man_hours"] --> R2
-    R1a -- No --> R1b{"`Tutti gli
-    stabilimenti in Asia?`"}
+    R1a -- No --> R1b{"Tutti gli
+    stabilimenti in Asia?"}
     R1b -- Sì --> R1_20["+20 pts | ALTO
     +30 man_hours"] --> R2
-    R1b -- No --> R1c{"`Maggioranza
-    in Asia? >50%`"}
+    R1b -- No --> R1c{"Maggioranza
+    in Asia? >50%"}
     R1c -- Sì --> R1_12["+12 pts | MEDIO"] --> R2
     R1c -- No --> R2
 
-    R2{"`**2. SINGLE SOURCE (20%)**
-    Quanti stabilimenti?`"}
+    R2{"**2. SINGLE SOURCE (20%)**
+    Quanti stabilimenti?"}
     R2 --> R2a{num_plants == 1?}
     R2a -- Sì --> R2_20["+20 pts | CRITICO
     +weeks_qual x 40 man_hours"] --> R3
@@ -37,8 +37,8 @@ flowchart TD
     R2b -- Sì --> R2_10["+10 pts | MEDIO"] --> R3
     R2b -- No --> R3
 
-    R3{"`**3. LEAD TIME (15%)**
-    Supplier Lead Time?`"}
+    R3{"**3. LEAD TIME (15%)**
+    Supplier Lead Time?"}
     R3 --> R3a{"> 16 settimane?"}
     R3a -- Sì --> R3_15["+15 pts | CRITICO
     +16 man_hours"] --> R4
@@ -49,28 +49,28 @@ flowchart TD
     R3c -- Sì --> R3_5["+5 pts | MEDIO"] --> R4
     R3c -- No --> R4
 
-    R4{"`**4. BUFFER STOCK (15%)**
-    Dati disponibili?`"}
+    R4{"**4. BUFFER STOCK (15%)**
+    Dati disponibili?"}
     R4 -- No --> R5
-    R4 -- Sì --> R4calc["`coverage_weeks =
+    R4 -- Sì --> R4calc["coverage_weeks =
     buffer_stock /
-    (run_rate x qty_per_bom)`"]
-    R4calc --> R4a{"`coverage <
-    lead_time?`"}
+    (run_rate x qty_per_bom)"]
+    R4calc --> R4a{"coverage <
+    lead_time?"}
     R4a -- Sì --> R4_15["+15 pts | CRITICO
     +8 man_hours"] --> R5
-    R4a -- No --> R4b{"`coverage <
-    lead_time x 1.5?`"}
+    R4a -- No --> R4b{"coverage <
+    lead_time x 1.5?"}
     R4b -- Sì --> R4_8["+8 pts | MEDIO"] --> R5
     R4b -- No --> R5
 
-    R5{"`**5. DIPENDENZE (10%)**
-    Stand-Alone = N?`"}
+    R5{"**5. DIPENDENZE (10%)**
+    Stand-Alone = N?"}
     R5 -- Sì --> R5_10["+10 pts | ALTO"] --> R6
     R5 -- No --> R6
 
-    R6{"`**6. PROPRIETARY (10%)**
-    Proprietario?`"}
+    R6{"**6. PROPRIETARY (10%)**
+    Proprietario?"}
     R6 --> R6a{"Proprietary = Y?"}
     R6a -- Sì --> R6_10["+10 pts | ALTO
     +200 man_hours"] --> R7
@@ -78,14 +78,14 @@ flowchart TD
     R6b -- Sì --> R6_5["+5 pts | MEDIO"] --> R7
     R6b -- No --> R7
 
-    R7{"`**7. CERTIFICAZIONI (5%)**
-    Weeks to qualify > 12?`"}
+    R7{"**7. CERTIFICAZIONI (5%)**
+    Weeks to qualify > 12?"}
     R7 -- Sì --> R7_5["+5 pts | MEDIO
     +16 man_hours"] --> Classify
     R7 -- No --> Classify
 
-    Classify{"`**CLASSIFICAZIONE FINALE**
-    score totale?`"}
+    Classify{"**CLASSIFICAZIONE FINALE**
+    score totale?"}
     Classify --> C1{"score >= 55?"}
     C1 -- Sì --> RED["RED - ALTO"]
     C1 -- No --> C2{"score >= 30?"}
@@ -96,21 +96,19 @@ flowchart TD
     YELLOW --> Return
     GREEN --> Return
 
-    Return(["`Return: score, color,
+    Return(["Return: score, color,
     risk_level, factors,
-    suggestions, man_hours`"])
+    suggestions, man_hours"])
 
-    Return -.-> BOM
-
-    subgraph BOM ["`**calculate_bom_risk**`"]
+    subgraph BOM["**calculate_bom_risk**"]
         direction TB
-        B_Start(["`Input: components_risk, df`"]) --> B_Check{Lista vuota?}
+        B_Start(["Input: components_risk, df"]) --> B_Check{Lista vuota?}
         B_Check -- Sì --> B_NA["GREEN / N/A"] --> B_End
-        B_Check -- No --> B_Loop["`Per ogni componente:
+        B_Check -- No --> B_Loop["Per ogni componente:
         value = price x qty
-        weighted_score += score x value`"]
-        B_Loop --> B_Avg["`avg_score =
-        weighted_score / total_value`"]
+        weighted_score += score x value"]
+        B_Loop --> B_Avg["avg_score =
+        weighted_score / total_value"]
         B_Avg --> B_C1{"avg >= 50?"}
         B_C1 -- Sì --> B_RED["RED - ALTO"] --> B_End
         B_C1 -- No --> B_C2{"avg >= 30?"}

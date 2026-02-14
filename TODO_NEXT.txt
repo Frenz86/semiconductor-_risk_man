@@ -1,0 +1,2 @@
+3. Mancano i dati di mercato. Allocation status, book-to-bill ratio, DRAM/NAND spot prices — questi dati dinamici trasformerebbero lo strumento da "risk assessment" a "risk monitoring". L'integrazione con Nexar (che avete già in NEXARAPI/) potrebbe colmare questo gap.
+
