@@ -18,6 +18,7 @@ Per eseguire:
 
 import streamlit as st
 import streamlit.components.v1 as components
+import hashlib
 from risk_engine import calculate_component_risk, calculate_bom_risk, calculate_bom_risk_v3
 from pn_lookup import PartNumberDatabase
 
@@ -77,11 +78,93 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =============================================================================
+# LOGIN SYSTEM
+# =============================================================================
+
+# Credenziali hardcoded (in produzione usare un database o file sicuro)
+USERS = {
+    "admin": "admin",     # username: password
+    "user": "admin",
+    "guest": "guest"
+}
+
+
+def hash_password(password):
+    """Hash della password usando SHA256."""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+
+def check_login(username, password):
+    """Verifica le credenziali."""
+    if username in USERS:
+        # Per semplicità, confronto diretto (in produzione usare hash)
+        return USERS[username] == password
+    return False
+
+
+def show_login_page():
+    """Mostra la pagina di login."""
+    st.markdown("""
+    <style>
+        .login-container {
+            max-width: 400px;
+            margin: 100px auto;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .login-title {
+            color: #1976D2;
+            font-size: 2rem;
+            margin-bottom: 20px;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown('<div class="login-container">', unsafe_allow_html=True)
+    st.markdown('<h1 class="login-title">🔌 Supply Chain Platform</h1>', unsafe_allow_html=True)
+    st.markdown("### Effettua il login per continuare")
+
+    with st.form("login_form"):
+        username = st.text_input("Username", placeholder="Inserisci username")
+        password = st.text_input("Password", type="password", placeholder="Inserisci password")
+        submit = st.form_submit_button("Login", use_container_width=True)
+
+        if submit:
+            if username and password:
+                if check_login(username, password):
+                    st.session_state.logged_in = True
+                    st.session_state.username = username
+                    st.success("Login effettuato con successo!")
+                    st.rerun()
+                else:
+                    st.error("Username o password non validi!")
+            else:
+                st.warning("Inserisci username e password.")
+
+    st.markdown("---")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+# =============================================================================
 # SESSION STATE INITIALIZATION
 # =============================================================================
 
 def init_session_state():
     """Inizializza lo stato della sessione."""
+    # Verifica login
+    if 'logged_in' not in st.session_state:
+        st.session_state.logged_in = False
+
+    if 'username' not in st.session_state:
+        st.session_state.username = None
+
+    # Se non loggato, mostra pagina login e termina
+    if not st.session_state.logged_in:
+        show_login_page()
+        st.stop()
+
     if 'db' not in st.session_state:
         st.session_state.db = PartNumberDatabase()
         # Migra database se necessario
@@ -226,6 +309,14 @@ def run_batch_analysis(pns, client_id, run_rate):
 # =============================================================================
 
 with st.sidebar:
+    # User info e logout
+    st.markdown(f"👤 **Utente:** {st.session_state.username}")
+    if st.button("Logout", use_container_width=True):
+        st.session_state.logged_in = False
+        st.session_state.username = None
+        st.rerun()
+
+    st.markdown("---")
     st.header("Configurazione")
 
     clients = st.session_state.db.get_all_clients()
