@@ -144,15 +144,44 @@ def calculate_component_risk(row: Dict[str, Any], run_rate: int) -> Dict[str, An
         factors.append(f"🔬 MEDIO: Nodo tecnologico {tech_node.get('nm', '?')}nm - {tech_node['reason']}")
 
     # =====================================================================
-    # 2. RISCHIO SINGLE SOURCE (20%)
+    # 2. RISCHIO SINGLE SOURCE (20%) + LEAD TIME SPOF MULTIPLIER
     # =====================================================================
     countries = _extract_countries(row)
     num_plants = len(countries)
+    is_spof = num_plants == 1
 
-    if num_plants == 1:
-        score += 20
-        factors.append("🏭 CRITICO: Un solo stabilimento produttivo")
-        suggestions.append("Identificare e qualificare second source")
+    if is_spof:
+        base_spof_score = 20
+        lead_time = _get_safe_value(row, 'Supplier Lead Time (weeks)', 0)
+
+        # Lead time SPOF multiplier: un SPOF con lead time lungo è molto più rischioso
+        spof_multiplier = 1.0
+        if lead_time:
+            try:
+                lead_time = int(float(lead_time))
+                if lead_time >= 52:
+                    spof_multiplier = 2.0  # 52+ settimane = doppio rischio
+                    factors.append(f"🏭 CRITICO: Un solo stabilimento produttivo + lead time molto lungo ({lead_time} settimane)")
+                    suggestions.append("URGENTE: Qualificare second source o aumentare buffer stock strategico")
+                elif lead_time >= 26:
+                    spof_multiplier = 1.5  # 26-51 settimane = +50% rischio
+                    factors.append(f"🏭 CRITICO: Un solo stabilimento produttivo + lead time lungo ({lead_time} settimane)")
+                    suggestions.append("Valutare second source o buffer stock esteso")
+                elif lead_time >= 16:
+                    spof_multiplier = 1.3  # 16-25 settimane = +30% rischio
+                    factors.append(f"🏭 CRITICO: Un solo stabilimento produttivo + lead time medio-lungo ({lead_time} settimane)")
+                else:
+                    factors.append("🏭 CRITICO: Un solo stabilimento produttivo")
+                    suggestions.append("Identificare e qualificare second source")
+            except (ValueError, TypeError):
+                factors.append("🏭 CRITICO: Un solo stabilimento produttivo")
+                suggestions.append("Identificare e qualificare second source")
+        else:
+            factors.append("🏭 CRITICO: Un solo stabilimento produttivo")
+            suggestions.append("Identificare e qualificare second source")
+
+        score += int(base_spof_score * spof_multiplier)
+
         weeks_qual = _get_safe_value(row, 'Weeks to qualify', 12)
         if weeks_qual:
             man_hours += int(weeks_qual) * 40
