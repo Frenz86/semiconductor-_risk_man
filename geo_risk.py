@@ -252,9 +252,29 @@ def generate_risk_map_data(components: List[Dict[str, Any]]) -> List[Dict[str, A
         'ireland': (53.3, -6.3),
         'israel': (32.1, 34.8),
         'united kingdom': (51.5, -0.1),
+        'mexico': (23.6, -102.6),
     }
 
+    import random
+
+    def get_coords(country: str | None) -> tuple | None:
+        """Helper per lookup case-insensitive delle coordinate."""
+        if not country:
+            return None
+        return COUNTRY_COORDS.get(country.lower())
+
+    # Aggiunge un piccolo jitter per evitare sovrapposizione dei marker
+    def jitter_coords(lat: float, lon: float, index: int) -> tuple:
+        """Sposta leggermente le coordinate in base all'indice."""
+        # Jitter di circa ±0.5 gradi (circa 50km)
+        lat_offset = (index % 5 - 2) * 0.2
+        lon_offset = ((index // 5) % 5 - 2) * 0.2
+        return (lat + lat_offset, lon + lon_offset)
+
     markers = []
+    frontend_count = {}  # Contatore per jitter frontend per paese
+    backend_count = {}   # Contatore per jitter backend per paese
+
     for comp in components:
         pn = _get_safe(comp, 'Part Number', 'N/A')
         supplier = _get_safe(comp, 'Supplier Name', 'N/A')
@@ -262,11 +282,15 @@ def generate_risk_map_data(components: List[Dict[str, Any]]) -> List[Dict[str, A
         geo = calculate_geo_risk(comp)
 
         # Frontend marker
-        frontend_coords = COUNTRY_COORDS.get(geo['frontend_country'])
+        frontend_country = geo['frontend_country'].lower() if geo['frontend_country'] else ''
+        frontend_coords = get_coords(geo['frontend_country'])
         if frontend_coords:
+            idx = frontend_count.get(frontend_country, 0)
+            frontend_count[frontend_country] = idx + 1
+            lat_jit, lon_jit = jitter_coords(frontend_coords[0], frontend_coords[1], idx)
             markers.append({
-                'lat': frontend_coords[0],
-                'lon': frontend_coords[1],
+                'lat': lat_jit,
+                'lon': lon_jit,
                 'type': 'frontend',
                 'part_number': pn,
                 'supplier': supplier,
@@ -277,11 +301,15 @@ def generate_risk_map_data(components: List[Dict[str, Any]]) -> List[Dict[str, A
             })
 
         # Backend marker
-        backend_coords = COUNTRY_COORDS.get(geo['backend_country'])
-        if backend_coords and geo['backend_country'] != geo['frontend_country']:
+        backend_country = geo['backend_country'].lower() if geo['backend_country'] else ''
+        backend_coords = get_coords(geo['backend_country'])
+        if backend_coords:
+            idx = backend_count.get(backend_country, 0)
+            backend_count[backend_country] = idx + 1
+            lat_jit, lon_jit = jitter_coords(backend_coords[0], backend_coords[1], idx + 100)  # +100 per separare da frontend
             markers.append({
-                'lat': backend_coords[0],
-                'lon': backend_coords[1],
+                'lat': lat_jit,
+                'lon': lon_jit,
                 'type': 'backend',
                 'part_number': pn,
                 'supplier': supplier,
