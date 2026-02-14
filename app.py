@@ -39,7 +39,7 @@ from tabs_modules import (
 # =============================================================================
 
 st.set_page_config(
-    page_title="Supply Chain Resilience Platform v3.0",
+    page_title="Supply Chain Resilience Platform",
     page_icon="🔌",
     layout="wide"
 )
