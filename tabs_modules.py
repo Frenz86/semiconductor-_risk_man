@@ -14,12 +14,13 @@ from typing import List, Any, Dict
 from risk_engine import calculate_component_risk
 from geo_risk import get_technology_node_risk, generate_risk_map_data
 from whatif_simulator import (
-    simulate_disruption, 
-    get_predefined_scenarios, 
+    simulate_disruption,
+    get_predefined_scenarios,
     _is_component_affected as _check_affected,
     SCENARIO_TYPES
 )
 from dependency_graph import HAS_NETWORKX
+from pdf_export import show_export_button
 
 # =============================================================================
 # UTILITY FUNCTIONS
@@ -363,6 +364,12 @@ def render_tab_analisi_multipla():
     batch = st.session_state.batch_results
     if batch:
         st.markdown("---")
+
+        # Pulsante export PDF
+        st.subheader("📄 Esporta Report")
+        show_export_button(batch, st.session_state.current_client, st.session_state.run_rate, key="export_tab_multipla")
+        st.markdown("---")
+
         st.success(f"Trovati **{batch['found_count']}** di **{batch['total_count']}** part numbers")
 
         # Dashboard metriche
@@ -759,6 +766,10 @@ def render_tab_costi_switching():
 
     batch = st.session_state.batch_results
     if batch:
+        # Pulsante export PDF
+        st.subheader("📄 Esporta Report")
+        show_export_button(batch, st.session_state.current_client, st.session_state.run_rate, key="export_tab_switching")
+        st.markdown("---")
         components_risk = batch['components_risk']
 
         # Tabella principale

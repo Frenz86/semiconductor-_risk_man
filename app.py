@@ -355,11 +355,25 @@ with st.sidebar:
     st.metric("Part Numbers", stats['total_part_numbers'])
     st.metric("Clienti", stats['total_clients'])
 
+    st.markdown("---")
+    st.header("Esportazione")
+    if st.session_state.get('batch_results'):
+        from pdf_export import show_export_button
+
+        show_export_button(
+            st.session_state.batch_results,
+            st.session_state.current_client,
+            st.session_state.run_rate,
+            key="export_sidebar"
+        )
+    else:
+        st.info("Esegui prima un'Analisi Multipla")
+
 # =============================================================================
 # HEADER
 # =============================================================================
 
-st.title("Supply Chain Resilience Platform v3.0")
+st.title("Supply Chain Resilience Platform")
 st.markdown("**Analisi deterministica del rischio con dipendenze, geo-risk frontend/backend e costi di switching**")
 
 # =============================================================================
