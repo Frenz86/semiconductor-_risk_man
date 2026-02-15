@@ -15,7 +15,6 @@ Uso:
 import pandas as pd
 from typing import Dict, List, Any, Optional
 
-
 # =============================================================================
 # CONFIGURAZIONE - DATABASE MATERIALI CRITICI
 # =============================================================================
