@@ -33,6 +33,8 @@ DEFAULT_DB_NAME = 'part_numbers_db.xlsx'
 SHEET_PART_NUMBERS = 'Part_Numbers'
 SHEET_CLIENT_DATA = 'Client_Data'
 SHEET_CLIENTS = 'Clients'
+SHEET_TIER2_SUPPLIERS = 'Tier2_Suppliers'
+SHEET_COMPONENT_MATERIALS = 'Component_Materials'
 
 # Colonne obbligatorie per ogni foglio
 PART_NUMBERS_COLUMNS = [
@@ -97,6 +99,31 @@ CLIENTS_COLUMNS = [
     'Created_at'
 ]
 
+TIER2_SUPPLIERS_COLUMNS = [
+    'Tier2_Supplier_ID',
+    'Tier2_Supplier_Name',
+    'Material_Type',
+    'Material_Key',
+    'Country',
+    'Market_Share_Pct',
+    'Criticality',
+    'Substitutability',
+    'Notes',
+    'Created_at',
+    'Updated_at',
+]
+
+COMPONENT_MATERIALS_COLUMNS = [
+    'Part_Number',
+    'Material_Key',
+    'Material_Name',
+    'Tier2_Supplier_ID',
+    'Custom_Concentration',
+    'Custom_Country',
+    'Notes',
+    'Created_at',
+]
+
 
 # =============================================================================
 # CLASSE PRINCIPALE
@@ -143,6 +170,14 @@ class PartNumberDatabase:
             # Foglio Clients
             pd.DataFrame(columns=CLIENTS_COLUMNS).to_excel(
                 writer, sheet_name=SHEET_CLIENTS, index=False
+            )
+            # Foglio Tier2_Suppliers
+            pd.DataFrame(columns=TIER2_SUPPLIERS_COLUMNS).to_excel(
+                writer, sheet_name=SHEET_TIER2_SUPPLIERS, index=False
+            )
+            # Foglio Component_Materials
+            pd.DataFrame(columns=COMPONENT_MATERIALS_COLUMNS).to_excel(
+                writer, sheet_name=SHEET_COMPONENT_MATERIALS, index=False
             )
 
     def _load_sheet(self, sheet_name: str) -> pd.DataFrame:
@@ -508,10 +543,166 @@ class PartNumberDatabase:
             if changed:
                 self._save_sheet(df_pn, SHEET_PART_NUMBERS)
 
+            # Migrazione fogli Tier-2/3
+            df_t2 = self._load_sheet(SHEET_TIER2_SUPPLIERS)
+            if df_t2.empty or not all(c in df_t2.columns for c in TIER2_SUPPLIERS_COLUMNS):
+                df_t2 = pd.DataFrame(columns=TIER2_SUPPLIERS_COLUMNS)
+                self._save_sheet(df_t2, SHEET_TIER2_SUPPLIERS)
+
+            df_cm = self._load_sheet(SHEET_COMPONENT_MATERIALS)
+            if df_cm.empty or not all(c in df_cm.columns for c in COMPONENT_MATERIALS_COLUMNS):
+                df_cm = pd.DataFrame(columns=COMPONENT_MATERIALS_COLUMNS)
+                self._save_sheet(df_cm, SHEET_COMPONENT_MATERIALS)
+
             return True
         except Exception as e:
             print(f"Errore nella migrazione del database: {e}")
             return False
+
+    # -------------------------------------------------------------------------
+    # METODI PUBBLICI - TIER 2 SUPPLIERS
+    # -------------------------------------------------------------------------
+
+    def get_tier2_suppliers(self, material_key: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Restituisce fornitori Tier-2, opzionalmente filtrati per material_key."""
+        df = self._load_sheet(SHEET_TIER2_SUPPLIERS)
+        if df.empty:
+            return []
+        if material_key:
+            mask = df['Material_Key'].astype(str).str.upper() == material_key.upper()
+            return df[mask].to_dict('records')
+        return df.to_dict('records')
+
+    def add_tier2_supplier(self, data: Dict[str, Any]) -> bool:
+        """Aggiunge o aggiorna un fornitore Tier-2."""
+        try:
+            df = self._load_sheet(SHEET_TIER2_SUPPLIERS)
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+            # Auto-genera ID se non fornito
+            supplier_id = data.get('Tier2_Supplier_ID', '')
+            if not supplier_id:
+                existing_ids = df['Tier2_Supplier_ID'].tolist() if not df.empty else []
+                max_num = 0
+                for eid in existing_ids:
+                    try:
+                        num = int(str(eid).replace('T2S_', ''))
+                        max_num = max(max_num, num)
+                    except (ValueError, TypeError):
+                        pass
+                supplier_id = f"T2S_{max_num + 1:03d}"
+
+            data['Tier2_Supplier_ID'] = supplier_id
+            data['Updated_at'] = now
+
+            if df.empty:
+                data['Created_at'] = now
+                new_row = pd.DataFrame([data])
+                df = pd.concat([df, new_row], ignore_index=True)
+            else:
+                mask = df['Tier2_Supplier_ID'].astype(str) == str(supplier_id)
+                if mask.any():
+                    for col in df.columns:
+                        if col in data and col != 'Created_at':
+                            df.loc[mask, col] = data[col]
+                else:
+                    data['Created_at'] = now
+                    new_row = pd.DataFrame([data])
+                    df = pd.concat([df, new_row], ignore_index=True)
+
+            self._save_sheet(df, SHEET_TIER2_SUPPLIERS)
+            return True
+        except Exception as e:
+            print(f"Errore nell'aggiungere fornitore Tier-2: {e}")
+            return False
+
+    def remove_tier2_supplier(self, supplier_id: str) -> bool:
+        """Rimuove un fornitore Tier-2."""
+        try:
+            df = self._load_sheet(SHEET_TIER2_SUPPLIERS)
+            if df.empty:
+                return False
+            mask = df['Tier2_Supplier_ID'].astype(str) == str(supplier_id)
+            df = df[~mask]
+            self._save_sheet(df, SHEET_TIER2_SUPPLIERS)
+            return True
+        except Exception as e:
+            print(f"Errore nella rimozione fornitore Tier-2: {e}")
+            return False
+
+    def get_component_materials(self, part_number: str) -> List[Dict[str, Any]]:
+        """Restituisce i materiali custom associati a un Part Number."""
+        df = self._load_sheet(SHEET_COMPONENT_MATERIALS)
+        if df.empty:
+            return []
+        pn_normalized = self._normalize_pn(part_number)
+        mask = df['Part_Number'].astype(str).str.upper() == pn_normalized
+        return df[mask].to_dict('records')
+
+    def add_component_material(self, part_number: str, material_data: Dict[str, Any]) -> bool:
+        """Associa un materiale/fornitore Tier-2 a un Part Number."""
+        try:
+            df = self._load_sheet(SHEET_COMPONENT_MATERIALS)
+            pn_normalized = self._normalize_pn(part_number)
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+            material_data['Part_Number'] = pn_normalized
+            material_data['Created_at'] = now
+
+            mat_key = material_data.get('Material_Key', '')
+
+            if not df.empty:
+                # Controlla se esiste gia'
+                mask = (
+                    (df['Part_Number'].astype(str).str.upper() == pn_normalized) &
+                    (df['Material_Key'].astype(str).str.upper() == mat_key.upper())
+                )
+                if mask.any():
+                    for col in df.columns:
+                        if col in material_data and col != 'Created_at':
+                            df.loc[mask, col] = material_data[col]
+                    self._save_sheet(df, SHEET_COMPONENT_MATERIALS)
+                    return True
+
+            new_row = pd.DataFrame([material_data])
+            df = pd.concat([df, new_row], ignore_index=True)
+            self._save_sheet(df, SHEET_COMPONENT_MATERIALS)
+            return True
+        except Exception as e:
+            print(f"Errore nell'associare materiale: {e}")
+            return False
+
+    def remove_component_material(self, part_number: str, material_key: str) -> bool:
+        """Rimuove un'associazione materiale-componente."""
+        try:
+            df = self._load_sheet(SHEET_COMPONENT_MATERIALS)
+            if df.empty:
+                return False
+            pn_normalized = self._normalize_pn(part_number)
+            mask = (
+                (df['Part_Number'].astype(str).str.upper() == pn_normalized) &
+                (df['Material_Key'].astype(str).str.upper() == material_key.upper())
+            )
+            df = df[~mask]
+            self._save_sheet(df, SHEET_COMPONENT_MATERIALS)
+            return True
+        except Exception as e:
+            print(f"Errore nella rimozione materiale: {e}")
+            return False
+
+    def get_all_component_materials(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Restituisce tutte le associazioni, raggruppate per Part Number."""
+        df = self._load_sheet(SHEET_COMPONENT_MATERIALS)
+        if df.empty:
+            return {}
+        result = {}
+        for _, row in df.iterrows():
+            pn = str(row.get('Part_Number', '')).upper()
+            if pn:
+                if pn not in result:
+                    result[pn] = []
+                result[pn].append(row.to_dict())
+        return result
 
     # -------------------------------------------------------------------------
     # METODI PUBBLICI - STATISTICHE
@@ -550,5 +741,12 @@ class PartNumberDatabase:
         df_client_data = self._load_sheet(SHEET_CLIENT_DATA)
         if not df_client_data.empty:
             stats['total_client_records'] = len(df_client_data)
+
+        # Tier-2 Suppliers
+        df_t2 = self._load_sheet(SHEET_TIER2_SUPPLIERS)
+        if not df_t2.empty:
+            stats['total_tier2_suppliers'] = len(df_t2)
+        else:
+            stats['total_tier2_suppliers'] = 0
 
         return stats

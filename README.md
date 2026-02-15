@@ -1,4 +1,4 @@
-# Supply Chain Resilience Platform v3.0
+# Supply Chain Resilience Platform v3.2
 
 Piattaforma per la **valutazione proattiva del rischio e della resilienza** della supply chain elettronica nel settore semiconduttori.
 
@@ -14,16 +14,19 @@ Analizza BOM (Bill of Materials) di schede elettroniche, calcola un risk score d
 | **Dashboard Esecutiva** | Vista d'insieme con KPI, distribuzione rischio, Top-N componenti critici e heatmap |
 | **Albero Dipendenze** | Grafo interattivo delle correlazioni funzionali tra componenti (es. MPU ← PMIC ← DDR) con chain risk propagation e rilevamento SPOF (Single Point of Failure) |
 | **Mappa Geopolitica** | Mappa Folium con rischio stratificato Frontend (Wafer Fab) / Backend (Assembly/Test OSAT) per paese |
+| **Tier-2/3 Visibility** | Analisi dipendenze a monte: materiali critici (neon gas, photoresists, silicon wafers, terre rare), heatmap concentrazione per paese, gestione fornitori custom |
 | **Costi di Switching** | Stima ore-uomo e costi di sostituzione componente, classificazione TRIVIALE / MODERATO / COMPLESSO / CRITICO |
-| **Simulatore What-If** | Scenari di disruption: blocco paese, interruzione fornitore, aumento lead time, picco domanda — con impatto finanziario |
-| **Gestione Database** | CRUD completo per Part Numbers, Clienti e override dati per cliente |
+| **Simulatore What-If** | Scenari di disruption: blocco paese, interruzione fornitore, aumento lead time, picco domanda, carenza materiale Tier-2 — con impatto finanziario |
+| **Gestione Database** | CRUD completo per Part Numbers, Clienti, fornitori Tier-2 e override dati per cliente |
 | **Export PDF** | Report professionale esportabile con tutti i dati dell'analisi |
 
 ---
 
 ## Risk Engine
 
-Il motore di rischio calcola uno **score 0–100** per ogni componente, basato su 7 fattori pesati:
+Il motore di rischio calcola uno **score 0–100** per ogni componente, basato su 15 fattori:
+
+### Fattori base (pesati)
 
 | Fattore | Peso | Dettaglio |
 |---------|------|-----------|
@@ -32,15 +35,54 @@ Il motore di rischio calcola uno **score 0–100** per ogni componente, basato s
 | Lead Time | 15% | Soglie a 6, 10, 16 settimane |
 | Buffer Stock | 15% | Copertura rispetto al lead time, riduzione proporzionale del rischio |
 | Dipendenze Funzionali | 10% | Componente stand-alone vs. catena critica |
-| Proprietarietà | 10% | Commodity vs. proprietario/custom |
+| Proprietarieta' | 10% | Commodity vs. proprietario/custom |
 | Certificazioni | 5% | Tempo di riqualifica (AEC-Q100, IEC 61508, ecc.) |
+
+### Fattori addizionali
+
+| Fattore | Punti Max | Dettaglio |
+|---------|-----------|-----------|
+| EOL Status | +15 | Active / NRND / Last_Buy / EOL / Obsolete |
+| Alternative Sources | +10 / -3 | Fonti alternative sul mercato |
+| Salute Finanziaria Fornitore | +8 | Rating A/B/C/D |
+| Allocation Status | +10 | Normal / Constrained / Allocated |
+| Aumento Prezzo | +5 | Ultimo aumento % come segnale di tensione |
+| Package Type | +3 | Package avanzati (WLCSP, FCBGA, 3D) |
+| Technology Node | +5 | Nodi avanzati <= 7nm |
+| **Tier-2/3 Supply Chain** | **+15** | Concentrazione materiali critici a monte (neon, wafer, photoresists) |
 
 **Soglie di rischio:**
 - **ALTO** (rosso): score >= 55
 - **MEDIO** (giallo): score 30–54
 - **BASSO** (verde): score < 30
 
-Il modulo include anche il **Technology Node Risk Assessment** (nodi < 7nm = critico per concentrazione TSMC/Samsung).
+---
+
+## Tier-2/3 Supply Chain Visibility
+
+Il modulo analizza le dipendenze nascoste a monte dei fornitori Tier-1, identificando 13 materiali critici per l'industria dei semiconduttori:
+
+| Materiale | Paese Dominante | Concentrazione | Criticita' |
+|-----------|----------------|----------------|------------|
+| Neon Gas | Ucraina/Russia | ~70% | CRITICAL |
+| Photoresists | Giappone | ~90% | CRITICAL |
+| Silicon Wafers | Giappone | ~55% | CRITICAL |
+| Rare Earth Elements | Cina | ~70% | HIGH |
+| Palladium Wire | Sudafrica/Russia | ~65% | MEDIUM |
+| SiC Substrates | USA | ~60% | HIGH |
+| Sapphire Substrates | Cina | ~50% | MEDIUM |
+| CMP Slurry | USA | ~45% | HIGH |
+| GaN Substrates | Giappone | ~40% | HIGH |
+
+**Approccio ibrido:**
+- **Predefinito**: ogni combinazione categoria (MCU, MPU, Sensor, Power...) + nodo tecnologico (advanced/mainstream/mature/legacy) e' automaticamente mappata ai materiali critici necessari
+- **Custom**: possibilita' di aggiungere fornitori Tier-2 e associazioni materiale-componente nel database
+
+**Scoring** (0–25, scalato a 0–15 nel risk score finale):
+- Concentrazione materiale per paese (0-10)
+- Numero materiali critici/non-sostituibili (0-5)
+- Overlap geopolitico frontend/Tier-2 (0-5)
+- Penalita' nodo avanzato (0-5)
 
 ---
 
@@ -50,7 +92,8 @@ Il modulo include anche il **Technology Node Risk Assessment** (nodi < 7nm = cri
 app.py                      # Entry point Streamlit, routing tab, login
 ├── tabs_modules.py          # Rendering UI di tutti i tab
 ├── risk_engine.py           # Motore di calcolo rischio (business logic pura)
-├── pn_lookup.py             # Database manager (Excel-based, Part Numbers + Clienti)
+├── tier2_visibility.py      # Visibilita' Tier-2/3 supply chain (materiali critici)
+├── pn_lookup.py             # Database manager (Excel-based, 5 fogli)
 ├── geo_risk.py              # Rischio geopolitico Frontend/Backend per paese
 ├── switching_cost.py        # Calcolo costi di switching componente
 ├── dependency_graph.py      # Grafi di dipendenza e SPOF detection (NetworkX)
@@ -58,10 +101,20 @@ app.py                      # Entry point Streamlit, routing tab, login
 ├── pdf_export.py            # Generazione report PDF (ReportLab)
 ├── create_bom_examples.py   # Script per generare BOM di esempio
 ├── update_database_from_bom.py  # Import BOM in database
-├── part_numbers_db.xlsx     # Database principale (Part_Numbers, Client_Data, Clients)
+├── part_numbers_db.xlsx     # Database principale (5 fogli)
 ├── NEXARAPI/                # Modulo Nexar API (integrazione futura)
 └── *.xlsx                   # BOM di esempio (Automotive ADAS, IoT Gateway, ecc.)
 ```
+
+### Database Excel (5 fogli)
+
+| Foglio | Contenuto |
+|--------|-----------|
+| `Part_Numbers` | Repository globale componenti (38+ campi) |
+| `Client_Data` | Override specifici per cliente (buffer, lead time, qty BOM) |
+| `Clients` | Anagrafica clienti |
+| `Tier2_Suppliers` | Fornitori Tier-2 custom (nome, materiale, paese, market share, criticita') |
+| `Component_Materials` | Associazioni PN ↔ materiale Tier-2 custom |
 
 ---
 
@@ -104,7 +157,7 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-L'applicazione sarà disponibile su `http://localhost:8501`.
+L'applicazione sara' disponibile su `http://localhost:8501`.
 
 ### Credenziali di default
 
@@ -135,7 +188,6 @@ Il repository include BOM precompilati per testing:
 
 ### Media priorita
 - Safety stock dinamico con formula statistica (Z x sigma x sqrt(LT))
-- Visibilita Tier-2/3 (sub-fornitori critici: gas speciali, substrati, chemicals)
 - Supplier Scorecard con KPI quantitativi (OTD, Quality PPM, financial health)
 - Compliance & Sanctions (ITAR, EAR, OFAC, REACH, Conflict Minerals)
 

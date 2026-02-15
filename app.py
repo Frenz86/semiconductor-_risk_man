@@ -28,6 +28,7 @@ from tabs_modules import (
     render_tab_analisi_multipla,
     render_tab_albero_dipendenze,
     render_tab_mappa_geopolitica,
+    render_tab_tier2_visibility,
     render_tab_costi_switching,
     render_tab_gestione_database,
     render_tab_simulatore_whatif,
@@ -381,16 +382,16 @@ st.markdown("**Analisi deterministica del rischio con dipendenze, geo-risk front
 # TABS
 # =============================================================================
 
-tab9, tab2, tab3, tab4, tab5, tab6, tab7, tab8  = st.tabs([
+tab9, tab2, tab3, tab4, tab5, tab_t2, tab6, tab7, tab8  = st.tabs([
     "Guida",
     "Analisi Multipla",
     "Dashboard",
     "Albero Dipendenze",
     "Mappa Geopolitica",
+    "Tier-2/3 Visibility",
     "Costi di Switching",
     "Simulatore What-If",
     "Gestione Database",
-
 ])
 
 # =============================================================================
@@ -415,6 +416,9 @@ with tab4:
 
 with tab5:
     render_tab_mappa_geopolitica()
+
+with tab_t2:
+    render_tab_tier2_visibility()
 
 with tab6:
     render_tab_costi_switching()

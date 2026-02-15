@@ -23,6 +23,7 @@ from dependency_graph import (
     build_dependency_graph, calculate_chain_risk,
     find_single_points_of_failure, render_dependency_tree
 )
+from tier2_visibility import calculate_tier2_risk
 
 
 # =============================================================================
@@ -416,6 +417,32 @@ def calculate_component_risk(row: Dict[str, Any], run_rate: int) -> Dict[str, An
         except (ValueError, TypeError):
             pass
 
+    # =====================================================================
+    # 15. RISCHIO TIER-2/3 SUPPLY CHAIN (fino a +15)
+    # =====================================================================
+    tier2_result = calculate_tier2_risk(row)
+    tier2_score = tier2_result.get('tier2_score', 0)
+    if tier2_score > 0:
+        tier2_contribution = min(15, int(tier2_score * 0.6))
+        score += tier2_contribution
+
+        if tier2_contribution >= 10:
+            factors.append(f"🔗 CRITICO: Alta dipendenza materiali Tier-2/3 (score {tier2_score}/25)")
+            if tier2_result.get('bottlenecks'):
+                top_bn = tier2_result['bottlenecks'][0]
+                factors.append(
+                    f"  Bottleneck: {top_bn['name']} "
+                    f"({top_bn['concentration']:.0%} {top_bn['dominant_country'].title()})"
+                )
+            suggestions.extend(tier2_result.get('suggestions', [])[:2])
+            man_hours += 24
+        elif tier2_contribution >= 5:
+            factors.append(f"🔗 ALTO: Dipendenza significativa materiali Tier-2/3 (score {tier2_score}/25)")
+            suggestions.extend(tier2_result.get('suggestions', [])[:1])
+            man_hours += 8
+        else:
+            factors.append(f"🔗 MEDIO: Dipendenza moderata materiali Tier-2/3")
+
     # Cap score a 100
     score = min(100, score)
 
@@ -442,6 +469,8 @@ def calculate_component_risk(row: Dict[str, Any], run_rate: int) -> Dict[str, An
         'tech_node_risk': tech_node,
         'switching_cost': switching,
         'buffer_coverage_weeks': round(buffer_coverage_weeks, 1),
+        # v3.2 - Tier-2/3
+        'tier2_risk': tier2_result,
     }
 
 

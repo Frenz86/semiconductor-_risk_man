@@ -28,6 +28,7 @@ SCENARIO_TYPES = {
     'supplier_outage': 'Interruzione Fornitore',
     'lead_time_increase': 'Aumento Lead Time',
     'demand_surge': 'Picco Domanda',
+    'material_shortage': 'Carenza Materiale Tier-2',
 }
 
 # Paesi a alto rischio con durate consigliate per blocco
@@ -117,6 +118,29 @@ def _is_component_affected(component: Dict[str, Any], scenario: Dict[str, Any]) 
     elif scenario_type == 'demand_surge':
         # Tutti i componenti sono affetti (picco domanda)
         return True
+
+    elif scenario_type == 'material_shortage':
+        from tier2_visibility import _get_materials_for_component, MATERIAL_DATABASE, _get_safe as _t2_get_safe
+
+        material_type = scenario.get('material_type', '')
+        affected_countries = [c.lower() for c in scenario.get('affected_countries', [])]
+
+        category_col = 'Category of product (MCU, MPU, Sensor, Analogic, Power, Passive Component, Transceiver Wireless)'
+        category = str(_get_safe(component.get(category_col, '')))
+        tech_node = str(_get_safe(component.get('Technology_Node', '')))
+
+        materials = _get_materials_for_component(category, tech_node)
+
+        if material_type:
+            return material_type in materials
+        elif affected_countries:
+            for mat_key in materials:
+                mat_data = MATERIAL_DATABASE.get(mat_key, {})
+                for country in affected_countries:
+                    share = mat_data.get('primary_countries', {}).get(country, 0)
+                    if share >= 0.10:
+                        return True
+            return False
 
     return False
 
@@ -462,6 +486,42 @@ def get_predefined_scenarios() -> List[Dict[str, Any]]:
             'weeks': 4,
             'description': 'Raddoppio dei lead time (100% - crisi globale)',
             'risk_multiplier': 2.0,
+        },
+        {
+            'name': 'Carenza Neon Gas (4 settimane)',
+            'type': 'material_shortage',
+            'material_type': 'neon_gas',
+            'affected_countries': ['ukraine', 'russia'],
+            'weeks': 4,
+            'description': 'Interruzione fornitura neon gas - impatto su litografia',
+            'risk_multiplier': 2.0,
+        },
+        {
+            'name': 'Carenza Photoresists Giappone (6 settimane)',
+            'type': 'material_shortage',
+            'material_type': 'photoresists',
+            'affected_countries': ['japan'],
+            'weeks': 6,
+            'description': 'Interruzione fornitura photoresists dal Giappone (JSR/TOK)',
+            'risk_multiplier': 2.5,
+        },
+        {
+            'name': 'Restrizioni Terre Rare Cina (8 settimane)',
+            'type': 'material_shortage',
+            'material_type': 'rare_earth_elements',
+            'affected_countries': ['china'],
+            'weeks': 8,
+            'description': 'Restrizioni export terre rare dalla Cina',
+            'risk_multiplier': 2.0,
+        },
+        {
+            'name': 'Carenza SiC Substrati (6 settimane)',
+            'type': 'material_shortage',
+            'material_type': 'sic_substrates',
+            'affected_countries': ['usa'],
+            'weeks': 6,
+            'description': 'Carenza substrati SiC (Wolfspeed capacity shortage)',
+            'risk_multiplier': 1.8,
         },
     ]
 
