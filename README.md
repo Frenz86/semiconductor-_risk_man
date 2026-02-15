@@ -1,255 +1,164 @@
-# 🔌 Supply Chain Risk Assessment Tool v2.0
+# Supply Chain Resilience Platform v3.0
 
-## 🚀 Novità nella Versione 2.0
+Piattaforma per la **valutazione proattiva del rischio e della resilienza** della supply chain elettronica nel settore semiconduttori.
 
-Il sistema è stato completamente riprogettato con una **nuova architettura basata su knowledge base dei Part Numbers**.
-
-### Cosa cambia dalla v1.0?
-
-| Caratteristica | v1.0 | v2.0 |
-|----------------|------|------|
-| Input | Upload Excel con tutti i dati | Inserimento solo Part Number |
-| Lookup manuale | Ogni volta | Automatico dal database |
-| Gestione dati | File Excel esterni | Database centralizzato |
-| Multi-cliente | Non supportato | ✅ Supportato |
-| Analisi rapida | No | ✅ Singolo PN |
-| Inserimento PN | Manuale nel file Excel | ✅ Wizard guidato |
-
-## Descrizione
-
-Applicazione Streamlit per valutare il rischio della supply chain per componenti elettronici basata su una knowledge base dei Part Numbers.
-
-**Funzionalità principali:**
-- ⚡ **Analisi Rapida**: Inserisci un Part Number e ottieni subito la valutazione del rischio
-- 📋 **Analisi Multipla**: Analizza più Part Numbers contemporaneamente
-- 🗄️ **Database Centralizzato**: Tutti i dati dei componenti in un unico Excel
-- 👥 **Multi-Cliente**: Dati specifici per cliente (qty BOM, buffer stock)
-- 💡 **Suggerimenti**: Raccomandazioni automatiche per mitigare i rischi
-- 📊 **Report**: Export Excel con risultati formattati
-
-## Architettura del Sistema
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        STREAMLIT APP                            │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐ │
-│  │ Analisi      │  │ Gestione     │  │ Visualizzazione      │ │
-│  │ Rapida/Multi │  │ Database     │  │ Risultati            │ │
-│  └──────┬───────┘  └──────┬───────┘  └──────────────────────┘ │
-└─────────┼──────────────────┼──────────────────────────────────┘
-          │                  │
-          ▼                  ▼
-    ┌──────────┐      ┌─────────────────────────────────────┐
-    │   pn_    │      │     part_numbers_db.xlsx             │
-    │  lookup  │      │  ┌─────────────┬─────────────────┐   │
-    │  .py     │      │  │Part_Numbers │   Client_Data   │   │
-    └────┬─────┘      │  │(dati globali)│(dati cliente)  │   │
-         │            │  └─────────────┴─────────────────┘   │
-         │            └─────────────────────────────────────┘
-         ▼
-    ┌─────────────────┐
-    │  risk_engine.py │
-    │  (calcolo       │
-    │   rischio)      │
-    └─────────────────┘
-```
-
-## File del Progetto
-
-### Moduli Python
-- **`app.py`** - Interfaccia Streamlit principale
-- **`risk_engine.py`** - Motore di calcolo del rischio (puro Python, riutilizzabile)
-- **`pn_lookup.py`** - Modulo per lookup e gestione del database
-
-### Database
-- **`part_numbers_db.xlsx`** - Database Excel con 3 fogli:
-  - `Part_Numbers` - Dati globali dei componenti
-  - `Client_Data` - Dati specifici per cliente
-  - `Clients` - Anagrafica clienti
-
-### Altri File
-- **`risk_engine_flow.mmd`** - Diagramma di flusso dell'algoritmo (Mermaid)
-- **`BOM_Input_Template_10_Components.xlsx`** - Template di esempio (legacy)
-
-## Utilizzo Rapido
-
-### 1. Installazione
-
-```bash
-pip install -r requirements.txt
-```
-
-### 2. Avvio
-
-```bash
-streamlit run app.py
-```
-
-L'app si aprirà all'indirizzo `http://localhost:8501`
-
-### 3. Primo Uso
-
-1. **Seleziona il Cliente** dalla sidebar
-2. **Inserisci un Part Number** (es. `STM32MP157CAC3`)
-3. Clicca **Analizza**
-4. Visualizza i risultati con fattori di rischio e suggerimenti
-
-### 4. Se il PN non esiste
-
-Se un Part Number non è nel database, usa il **wizard di inserimento guidato**:
-1. Compila i campi obbligatori (*)
-2. Il sistema salverà automaticamente nel database
-3. Il PN sarà disponibile per future analisi
-
-## Fattori di Rischio Valutati
-
-| Fattore | Peso | Soglie |
-|---------|------|--------|
-| **Concentrazione Geografica** | 25% | Tutti in 1 paese Asia: +25<br>Tutti in Asia: +20<br>Maggioranza Asia: +12 |
-| **Single Source** | 20% | 1 stabilimento: +20<br>2 stabilimenti: +10 |
-| **Lead Time** | 15% | >16 settimane: +15<br>>10 settimane: +10<br>>6 settimane: +5 |
-| **Buffer Stock** | 15% | Copertura < lead time: +15<br>Copertura < 1.5x lead time: +8 |
-| **Dipendenze** | 10% | Non stand-alone: +10 |
-| **Proprietary** | 10% | Proprietario: +10<br>Non commodity: +5 |
-| **Certificazioni** | 5% | Riqualifica >12 settimane: +5 |
-
-## Livelli di Rischio
-
-- 🔴 **ALTO** (score ≥ 55): Azione immediata richiesta
-- 🟡 **MEDIO** (score 30-54): Monitoraggio e piano di mitigazione
-- 🟢 **BASSO** (score < 30): Rischio accettabile
-
-## Gestione del Database
-
-### Struttura del Database
-
-Il file `part_numbers_db.xlsx` contiene 3 fogli:
-
-#### 1. Part_Numbers (Dati Globali)
-Contiene i dati intrinseci del componente:
-- Part Number (chiave univoca)
-- Supplier Name
-- Category (MCU, MPU, Sensor, etc.)
-- Paesi di produzione (Plant 1-4)
-- Lead Time standard
-- Caratteristiche (Proprietary, Commodity, Stand-Alone)
-- Prezzo, Certificazioni, etc.
-
-#### 2. Client_Data (Dati Specifici Cliente)
-Contiene dati che variano per cliente:
-- Client_ID
-- Part Number
-- Qty in BOM
-- Buffer Stock Units
-- Custom Lead Time (opzionale, sovrascrive quello globale)
-- Notes
-
-#### 3. Clients (Anagrafica)
-- Client_ID
-- Client_Name
-- Default_Run_Rate
-
-### Popolamento Iniziale
-
-Il database è già popolato con 10 componenti di esempio:
-1. MKE02Z64VLD4 (NXP MCU)
-2. STM32MP157CAC3 (ST MPU)
-3. STPMIC1APQR (ST PMIC)
-4. BME280 (Bosch Sensor)
-5. ESP32-WROOM-32E (Espressif WiFi)
-6. GRM155R71C104KA88D (Murata MLCC)
-7. TPS62840DLCR (TI DC-DC)
-8. K4B4G1646E-BYMA (Samsung DDR)
-9. TLE9251VLE (Infineon CAN)
-10. 1-84953-4 (TE Connector)
-
-## API Programmatica
-
-I moduli possono essere usati anche al di fuori di Streamlit:
-
-```python
-from pn_lookup import PartNumberDatabase
-from risk_engine import calculate_component_risk
-
-# Inizializza database
-db = PartNumberDatabase('part_numbers_db.xlsx')
-
-# Lookup part number
-data = db.lookup_part_number('STM32MP157CAC3', client_id='DEMO_CLIENT')
-
-# Calcola rischio
-risk = calculate_component_risk(data, run_rate=5000)
-
-print(f"Rischio: {risk['risk_level']} (Score: {risk['score']})")
-print(f"Fattori: {risk['factors']}")
-print(f"Suggerimenti: {risk['suggestions']}")
-```
-
-## Personalizzazione
-
-### Modifica dei Pesi
-
-Modifica le costanti in `risk_engine.py`:
-
-```python
-# Soglie di rischio
-RISK_THRESHOLDS = {
-    'high': 55,    # Score >= 55 -> RED
-    'medium': 30   # Score >= 30 -> YELLOW
-}
-
-# Paesi ad alto rischio
-HIGH_RISK_COUNTRIES = [
-    'taiwan', 'china', 'korea', 'japan',
-    'malaysia', 'singapore', 'philippines'
-]
-```
-
-### Aggiunta di Nuovi Clienti
-
-Dall'app: Tab "Gestione Database" → "Gestione Clienti"
-
-Oppure via codice:
-
-```python
-db = PartNumberDatabase()
-db.add_client('CLIENTE_001', 'Nome Cliente', default_run_rate=10000)
-```
-
-## Troubleshooting
-
-### Errore: "Nessun cliente trovato"
-Vai su "Gestione Database" → "Gestione Clienti" e aggiungi il primo cliente.
-
-### Errore: "Part Number non trovato"
-Usa il wizard di inserimento guidato o vai su "Gestione Database" → "Aggiungi Part Number".
-
-### Database non sincronizzato
-Se apporti modifiche manuali al file Excel, riavvia l'app.
-
-## Roadmap
-
-- [ ] Export PDF dei report
-- [ ] API REST per integrazione esterna
-- [ ] Dashboard trend temporali
-- [ ] Notifiche EOL/PCN automatiche
-- [ ] Integrazione con API distributori (DigiKey, Mouser, etc.)
-
-## Changelog
-
-### v2.0 (2024)
-- Nuova architettura basata su knowledge base
-- Lookup automatico dei Part Numbers
-- Supporto multi-cliente
-- Analisi rapida singolo PN
-- Wizard di inserimento guidato
-- Moduli Python riutilizzabili
-
-### v1.0
-- Upload Excel con BOM
-- Analisi rischio multi-componente
-- Export Excel con risultati
+Analizza BOM (Bill of Materials) di schede elettroniche, calcola un risk score deterministico per ogni componente e genera report esecutivi con raccomandazioni operative.
 
 ---
 
-**Supply Chain Risk Assessment Tool v2.0** | Basato su knowledge base per analisi rapida del rischio
+## Funzionalità principali
+
+| Modulo | Descrizione |
+|--------|-------------|
+| **Analisi Multipla** | Upload BOM da Excel/CSV, analisi batch di tutti i Part Number con risk score individuale e aggregato |
+| **Dashboard Esecutiva** | Vista d'insieme con KPI, distribuzione rischio, Top-N componenti critici e heatmap |
+| **Albero Dipendenze** | Grafo interattivo delle correlazioni funzionali tra componenti (es. MPU ← PMIC ← DDR) con chain risk propagation e rilevamento SPOF (Single Point of Failure) |
+| **Mappa Geopolitica** | Mappa Folium con rischio stratificato Frontend (Wafer Fab) / Backend (Assembly/Test OSAT) per paese |
+| **Costi di Switching** | Stima ore-uomo e costi di sostituzione componente, classificazione TRIVIALE / MODERATO / COMPLESSO / CRITICO |
+| **Simulatore What-If** | Scenari di disruption: blocco paese, interruzione fornitore, aumento lead time, picco domanda — con impatto finanziario |
+| **Gestione Database** | CRUD completo per Part Numbers, Clienti e override dati per cliente |
+| **Export PDF** | Report professionale esportabile con tutti i dati dell'analisi |
+
+---
+
+## Risk Engine
+
+Il motore di rischio calcola uno **score 0–100** per ogni componente, basato su 7 fattori pesati:
+
+| Fattore | Peso | Dettaglio |
+|---------|------|-----------|
+| Concentrazione Geografica | 25% | Rischio Frontend (60%) + Backend (40%), con scoring per paese |
+| Single Source | 20% | Numero di stabilimenti produttivi e fornitori alternativi |
+| Lead Time | 15% | Soglie a 6, 10, 16 settimane |
+| Buffer Stock | 15% | Copertura rispetto al lead time, riduzione proporzionale del rischio |
+| Dipendenze Funzionali | 10% | Componente stand-alone vs. catena critica |
+| Proprietarietà | 10% | Commodity vs. proprietario/custom |
+| Certificazioni | 5% | Tempo di riqualifica (AEC-Q100, IEC 61508, ecc.) |
+
+**Soglie di rischio:**
+- **ALTO** (rosso): score >= 55
+- **MEDIO** (giallo): score 30–54
+- **BASSO** (verde): score < 30
+
+Il modulo include anche il **Technology Node Risk Assessment** (nodi < 7nm = critico per concentrazione TSMC/Samsung).
+
+---
+
+## Architettura
+
+```
+app.py                      # Entry point Streamlit, routing tab, login
+├── tabs_modules.py          # Rendering UI di tutti i tab
+├── risk_engine.py           # Motore di calcolo rischio (business logic pura)
+├── pn_lookup.py             # Database manager (Excel-based, Part Numbers + Clienti)
+├── geo_risk.py              # Rischio geopolitico Frontend/Backend per paese
+├── switching_cost.py        # Calcolo costi di switching componente
+├── dependency_graph.py      # Grafi di dipendenza e SPOF detection (NetworkX)
+├── whatif_simulator.py      # Simulazione scenari di disruption
+├── pdf_export.py            # Generazione report PDF (ReportLab)
+├── create_bom_examples.py   # Script per generare BOM di esempio
+├── update_database_from_bom.py  # Import BOM in database
+├── part_numbers_db.xlsx     # Database principale (Part_Numbers, Client_Data, Clients)
+├── NEXARAPI/                # Modulo Nexar API (integrazione futura)
+└── *.xlsx                   # BOM di esempio (Automotive ADAS, IoT Gateway, ecc.)
+```
+
+---
+
+## Requisiti
+
+- Python 3.10+
+- Dipendenze: vedi [requirements.txt](requirements.txt)
+
+```
+streamlit>=1.38.0
+pandas>=2.0.0
+openpyxl>=3.1.0
+xlsxwriter>=3.1.0
+plotly>=5.18.0
+streamlit-folium>=0.23.0
+folium>=0.18.0
+networkx>=3.0
+matplotlib>=3.7.0
+reportlab>=4.0.0
+```
+
+---
+
+## Installazione e avvio
+
+```bash
+# Clona il repository
+git clone <url-repo>
+cd semiconductor_risk_man
+
+# Crea un virtual environment (consigliato)
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+venv\Scripts\activate     # Windows
+
+# Installa le dipendenze
+pip install -r requirements.txt
+
+# Avvia l'applicazione
+streamlit run app.py
+```
+
+L'applicazione sarà disponibile su `http://localhost:8501`.
+
+### Credenziali di default
+
+| Username | Password |
+|----------|----------|
+| `admin`  | `admin`  |
+| `user`   | `admin`  |
+| `guest`  | `guest`  |
+
+---
+
+## BOM di esempio inclusi
+
+Il repository include BOM precompilati per testing:
+
+- **01_BOM_Input_Template_10.xlsx** — Template generico con 10 componenti
+- **02_BOM_Automotive_ADAS_ECU_15.xlsx** — ECU ADAS automotive con 15 componenti
+- **03_BOM_Industrial_IoT_Gateway_12.xlsx** — Gateway IoT industriale con 12 componenti
+
+---
+
+## Roadmap
+
+### Alta priorita
+- Integrazione **Nexar API** per inventory e pricing real-time
+- **EOL/PCN Alert System** per monitoraggio end-of-life e product change notice
+- **Second Source Qualification Matrix**
+
+### Media priorita
+- Safety stock dinamico con formula statistica (Z x sigma x sqrt(LT))
+- Visibilita Tier-2/3 (sub-fornitori critici: gas speciali, substrati, chemicals)
+- Supplier Scorecard con KPI quantitativi (OTD, Quality PPM, financial health)
+- Compliance & Sanctions (ITAR, EAR, OFAC, REACH, Conflict Minerals)
+
+### Bassa priorita
+- Simulazione Monte Carlo per risk score probabilistico
+- REST API per integrazione ERP/PLM/MES
+- Recovery Curve Modeling post-disruption
+
+---
+
+## Stack tecnologico
+
+| Componente | Tecnologia |
+|------------|------------|
+| Frontend | Streamlit |
+| Visualizzazione | Plotly, Folium, Mermaid.js |
+| Grafi | NetworkX |
+| Database | Excel (openpyxl) |
+| Report | ReportLab (PDF) |
+| Mappe | Folium + streamlit-folium |
+
+---
+
+## Licenza
+
+Progetto proprietario. Tutti i diritti riservati.
