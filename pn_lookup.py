@@ -35,6 +35,12 @@ SHEET_CLIENT_DATA = 'Client_Data'
 SHEET_CLIENTS = 'Clients'
 SHEET_TIER2_SUPPLIERS = 'Tier2_Suppliers'
 SHEET_COMPONENT_MATERIALS = 'Component_Materials'
+# v4.0 - Filiera commerciale
+SHEET_EMS_PROVIDERS = 'EMS_Providers'
+SHEET_DISTRIBUTORS = 'Distributors'
+SHEET_PART_DISTRIBUTORS = 'Part_Distributors'
+SHEET_ALT_SOURCES = 'Alt_Sources'
+SHEET_SUPPLIER_PROFILES = 'Supplier_Profiles'
 
 # Colonne obbligatorie per ogni foglio
 PART_NUMBERS_COLUMNS = [
@@ -124,6 +130,68 @@ COMPONENT_MATERIALS_COLUMNS = [
     'Created_at',
 ]
 
+# v4.0 - Nuovi fogli filiera commerciale
+EMS_PROVIDERS_COLUMNS = [
+    'EMS_ID',
+    'EMS_Name',
+    'Country',
+    'Financial_Health',       # A / B / C / D
+    'Capacity_Utilization_Pct',  # 0-100
+    'Certifications',         # Comma-separated: ISO9001, IATF16949, AS9100, IPC-J-STD-001
+    'Backup_Sites_Count',     # Numero siti di backup
+    'Years_Business',         # Anni di attività
+    'Notes',
+    'Created_at',
+    'Updated_at',
+]
+
+DISTRIBUTORS_COLUMNS = [
+    'Distributor_ID',
+    'Name',
+    'Country',
+    'Financial_Health',           # A / B / C / D
+    'Lead_Time_Markup_Weeks',     # Settimane extra sul lead time fornitore
+    'Stock_Level_Weeks_Coverage', # Settimane di stock mediamente disponibili
+    'Certifications',             # AS9120, ISO9001, ecc.
+    'Backup_Count',               # Numero distributori alternativi disponibili
+    'Notes',
+    'Created_at',
+    'Updated_at',
+]
+
+PART_DISTRIBUTORS_COLUMNS = [
+    'Part_Number',
+    'Distributor_ID',
+    'Priority',        # Primary / Secondary
+    'Allocation_Pct',  # % acquistata da questo distributore
+    'Created_at',
+]
+
+ALT_SOURCES_COLUMNS = [
+    'Part_Number',
+    'Supplier_Name',
+    'Frontend_Country',
+    'Backend_Country',
+    'Lead_Time_Weeks',
+    'Financial_Health',       # A / B / C / D
+    'Qualification_Status',   # Qualified / In_Progress / Not_Started
+    'Allocation_Pct',         # % attuale di acquisto da questa fonte
+    'Notes',
+    'Created_at',
+]
+
+SUPPLIER_PROFILES_COLUMNS = [
+    'Supplier_ID',
+    'Supplier_Name',
+    'Primary_Fab',          # Nome fab (es. TSMC Fab 18)
+    'Primary_Fab_Country',  # Paese fab
+    'Wafer_Source',         # Fornitore wafer (es. Shin-Etsu)
+    'Key_Materials_Override',  # JSON: {material_key: {country: %, concentration: float}}
+    'Notes',
+    'Created_at',
+    'Updated_at',
+]
+
 
 # =============================================================================
 # CLASSE PRINCIPALE
@@ -159,25 +227,36 @@ class PartNumberDatabase:
     def _create_empty_database(self) -> None:
         """Crea un database vuoto con la struttura corretta."""
         with pd.ExcelWriter(self.db_path, engine='openpyxl') as writer:
-            # Foglio Part_Numbers
             pd.DataFrame(columns=PART_NUMBERS_COLUMNS).to_excel(
                 writer, sheet_name=SHEET_PART_NUMBERS, index=False
             )
-            # Foglio Client_Data
             pd.DataFrame(columns=CLIENT_DATA_COLUMNS).to_excel(
                 writer, sheet_name=SHEET_CLIENT_DATA, index=False
             )
-            # Foglio Clients
             pd.DataFrame(columns=CLIENTS_COLUMNS).to_excel(
                 writer, sheet_name=SHEET_CLIENTS, index=False
             )
-            # Foglio Tier2_Suppliers
             pd.DataFrame(columns=TIER2_SUPPLIERS_COLUMNS).to_excel(
                 writer, sheet_name=SHEET_TIER2_SUPPLIERS, index=False
             )
-            # Foglio Component_Materials
             pd.DataFrame(columns=COMPONENT_MATERIALS_COLUMNS).to_excel(
                 writer, sheet_name=SHEET_COMPONENT_MATERIALS, index=False
+            )
+            # v4.0 - Filiera commerciale
+            pd.DataFrame(columns=EMS_PROVIDERS_COLUMNS).to_excel(
+                writer, sheet_name=SHEET_EMS_PROVIDERS, index=False
+            )
+            pd.DataFrame(columns=DISTRIBUTORS_COLUMNS).to_excel(
+                writer, sheet_name=SHEET_DISTRIBUTORS, index=False
+            )
+            pd.DataFrame(columns=PART_DISTRIBUTORS_COLUMNS).to_excel(
+                writer, sheet_name=SHEET_PART_DISTRIBUTORS, index=False
+            )
+            pd.DataFrame(columns=ALT_SOURCES_COLUMNS).to_excel(
+                writer, sheet_name=SHEET_ALT_SOURCES, index=False
+            )
+            pd.DataFrame(columns=SUPPLIER_PROFILES_COLUMNS).to_excel(
+                writer, sheet_name=SHEET_SUPPLIER_PROFILES, index=False
             )
 
     def _load_sheet(self, sheet_name: str) -> pd.DataFrame:
@@ -554,6 +633,25 @@ class PartNumberDatabase:
                 df_cm = pd.DataFrame(columns=COMPONENT_MATERIALS_COLUMNS)
                 self._save_sheet(df_cm, SHEET_COMPONENT_MATERIALS)
 
+            # v4.0 - Migrazione nuovi fogli filiera commerciale
+            for sheet_name, columns in [
+                (SHEET_EMS_PROVIDERS, EMS_PROVIDERS_COLUMNS),
+                (SHEET_DISTRIBUTORS, DISTRIBUTORS_COLUMNS),
+                (SHEET_PART_DISTRIBUTORS, PART_DISTRIBUTORS_COLUMNS),
+                (SHEET_ALT_SOURCES, ALT_SOURCES_COLUMNS),
+                (SHEET_SUPPLIER_PROFILES, SUPPLIER_PROFILES_COLUMNS),
+            ]:
+                df_new = self._load_sheet(sheet_name)
+                if df_new.empty or not all(c in df_new.columns for c in columns):
+                    # Preserva dati esistenti aggiungendo colonne mancanti
+                    if not df_new.empty:
+                        for col in columns:
+                            if col not in df_new.columns:
+                                df_new[col] = ''
+                    else:
+                        df_new = pd.DataFrame(columns=columns)
+                    self._save_sheet(df_new, sheet_name)
+
             return True
         except Exception as e:
             print(f"Errore nella migrazione del database: {e}")
@@ -708,6 +806,393 @@ class PartNumberDatabase:
     # METODI PUBBLICI - STATISTICHE
     # -------------------------------------------------------------------------
 
+    # -------------------------------------------------------------------------
+    # METODI PUBBLICI - EMS PROVIDERS (v4.0)
+    # -------------------------------------------------------------------------
+
+    def get_all_ems_providers(self) -> List[Dict[str, Any]]:
+        """Restituisce tutti i fornitori EMS."""
+        df = self._load_sheet(SHEET_EMS_PROVIDERS)
+        if df.empty:
+            return []
+        return df.to_dict('records')
+
+    def get_ems_provider(self, ems_name: str) -> Optional[Dict[str, Any]]:
+        """Cerca un EMS provider per nome (case-insensitive)."""
+        df = self._load_sheet(SHEET_EMS_PROVIDERS)
+        if df.empty:
+            return None
+        mask = df['EMS_Name'].astype(str).str.upper() == ems_name.upper().strip()
+        if mask.any():
+            return df[mask].iloc[0].to_dict()
+        return None
+
+    def add_ems_provider(self, data: Dict[str, Any]) -> bool:
+        """Aggiunge o aggiorna un fornitore EMS."""
+        try:
+            df = self._load_sheet(SHEET_EMS_PROVIDERS)
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+            ems_id = data.get('EMS_ID', '')
+            if not ems_id:
+                existing_ids = df['EMS_ID'].tolist() if not df.empty else []
+                max_num = 0
+                for eid in existing_ids:
+                    try:
+                        num = int(str(eid).replace('EMS_', ''))
+                        max_num = max(max_num, num)
+                    except (ValueError, TypeError):
+                        pass
+                ems_id = f"EMS_{max_num + 1:03d}"
+
+            data['EMS_ID'] = ems_id
+            data['Updated_at'] = now
+
+            if df.empty:
+                data['Created_at'] = now
+                df = pd.DataFrame([data])
+            else:
+                mask = df['EMS_ID'].astype(str) == str(ems_id)
+                if mask.any():
+                    for col in df.columns:
+                        if col in data and col != 'Created_at':
+                            df.loc[mask, col] = data[col]
+                else:
+                    data['Created_at'] = now
+                    new_row = pd.DataFrame([data])
+                    df = pd.concat([df, new_row], ignore_index=True)
+
+            self._save_sheet(df, SHEET_EMS_PROVIDERS)
+            return True
+        except Exception as e:
+            print(f"Errore nell'aggiungere EMS provider: {e}")
+            return False
+
+    def remove_ems_provider(self, ems_id: str) -> bool:
+        """Rimuove un fornitore EMS."""
+        try:
+            df = self._load_sheet(SHEET_EMS_PROVIDERS)
+            if df.empty:
+                return False
+            mask = df['EMS_ID'].astype(str) == str(ems_id)
+            df = df[~mask]
+            self._save_sheet(df, SHEET_EMS_PROVIDERS)
+            return True
+        except Exception as e:
+            print(f"Errore nella rimozione EMS provider: {e}")
+            return False
+
+    # -------------------------------------------------------------------------
+    # METODI PUBBLICI - DISTRIBUTORS (v4.0)
+    # -------------------------------------------------------------------------
+
+    def get_all_distributors(self) -> List[Dict[str, Any]]:
+        """Restituisce tutti i distributori."""
+        df = self._load_sheet(SHEET_DISTRIBUTORS)
+        if df.empty:
+            return []
+        return df.to_dict('records')
+
+    def get_distributor(self, distributor_id: str) -> Optional[Dict[str, Any]]:
+        """Cerca un distributore per ID."""
+        df = self._load_sheet(SHEET_DISTRIBUTORS)
+        if df.empty:
+            return None
+        mask = df['Distributor_ID'].astype(str).str.upper() == distributor_id.upper()
+        if mask.any():
+            return df[mask].iloc[0].to_dict()
+        return None
+
+    def add_distributor(self, data: Dict[str, Any]) -> bool:
+        """Aggiunge o aggiorna un distributore."""
+        try:
+            df = self._load_sheet(SHEET_DISTRIBUTORS)
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+            dist_id = data.get('Distributor_ID', '')
+            if not dist_id:
+                existing_ids = df['Distributor_ID'].tolist() if not df.empty else []
+                max_num = 0
+                for did in existing_ids:
+                    try:
+                        num = int(str(did).replace('DIST_', ''))
+                        max_num = max(max_num, num)
+                    except (ValueError, TypeError):
+                        pass
+                dist_id = f"DIST_{max_num + 1:03d}"
+
+            data['Distributor_ID'] = dist_id
+            data['Updated_at'] = now
+
+            if df.empty:
+                data['Created_at'] = now
+                df = pd.DataFrame([data])
+            else:
+                mask = df['Distributor_ID'].astype(str) == str(dist_id)
+                if mask.any():
+                    for col in df.columns:
+                        if col in data and col != 'Created_at':
+                            df.loc[mask, col] = data[col]
+                else:
+                    data['Created_at'] = now
+                    new_row = pd.DataFrame([data])
+                    df = pd.concat([df, new_row], ignore_index=True)
+
+            self._save_sheet(df, SHEET_DISTRIBUTORS)
+            return True
+        except Exception as e:
+            print(f"Errore nell'aggiungere distributore: {e}")
+            return False
+
+    def remove_distributor(self, distributor_id: str) -> bool:
+        """Rimuove un distributore."""
+        try:
+            df = self._load_sheet(SHEET_DISTRIBUTORS)
+            if df.empty:
+                return False
+            mask = df['Distributor_ID'].astype(str) == str(distributor_id)
+            df = df[~mask]
+            self._save_sheet(df, SHEET_DISTRIBUTORS)
+            return True
+        except Exception as e:
+            print(f"Errore nella rimozione distributore: {e}")
+            return False
+
+    # -------------------------------------------------------------------------
+    # METODI PUBBLICI - PART_DISTRIBUTORS (v4.0)
+    # -------------------------------------------------------------------------
+
+    def get_part_distributors(self, part_number: str) -> List[Dict[str, Any]]:
+        """Restituisce i distributori associati a un Part Number."""
+        df = self._load_sheet(SHEET_PART_DISTRIBUTORS)
+        if df.empty:
+            return []
+        pn_norm = self._normalize_pn(part_number)
+        mask = df['Part_Number'].astype(str).str.upper() == pn_norm
+        rows = df[mask].to_dict('records')
+        # Arricchisci con dati distributore
+        result = []
+        for row in rows:
+            dist = self.get_distributor(str(row.get('Distributor_ID', '')))
+            if dist:
+                row['distributor_data'] = dist
+            result.append(row)
+        return result
+
+    def add_part_distributor(self, part_number: str, data: Dict[str, Any]) -> bool:
+        """Associa un distributore a un Part Number."""
+        try:
+            df = self._load_sheet(SHEET_PART_DISTRIBUTORS)
+            pn_norm = self._normalize_pn(part_number)
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            dist_id = str(data.get('Distributor_ID', ''))
+
+            data['Part_Number'] = pn_norm
+            data['Created_at'] = now
+
+            if not df.empty:
+                mask = (
+                    (df['Part_Number'].astype(str).str.upper() == pn_norm) &
+                    (df['Distributor_ID'].astype(str) == dist_id)
+                )
+                if mask.any():
+                    for col in df.columns:
+                        if col in data and col != 'Created_at':
+                            df.loc[mask, col] = data[col]
+                    self._save_sheet(df, SHEET_PART_DISTRIBUTORS)
+                    return True
+
+            new_row = pd.DataFrame([data])
+            df = pd.concat([df, new_row], ignore_index=True)
+            self._save_sheet(df, SHEET_PART_DISTRIBUTORS)
+            return True
+        except Exception as e:
+            print(f"Errore nell'associare distributore: {e}")
+            return False
+
+    def remove_part_distributor(self, part_number: str, distributor_id: str) -> bool:
+        """Rimuove un'associazione PN-distributore."""
+        try:
+            df = self._load_sheet(SHEET_PART_DISTRIBUTORS)
+            if df.empty:
+                return False
+            pn_norm = self._normalize_pn(part_number)
+            mask = (
+                (df['Part_Number'].astype(str).str.upper() == pn_norm) &
+                (df['Distributor_ID'].astype(str) == str(distributor_id))
+            )
+            df = df[~mask]
+            self._save_sheet(df, SHEET_PART_DISTRIBUTORS)
+            return True
+        except Exception as e:
+            print(f"Errore nella rimozione associazione PN-distributore: {e}")
+            return False
+
+    def get_all_part_distributors(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Restituisce tutte le associazioni PN→distributori."""
+        df = self._load_sheet(SHEET_PART_DISTRIBUTORS)
+        if df.empty:
+            return {}
+        result = {}
+        for _, row in df.iterrows():
+            pn = str(row.get('Part_Number', '')).upper()
+            if pn:
+                if pn not in result:
+                    result[pn] = []
+                dist = self.get_distributor(str(row.get('Distributor_ID', '')))
+                row_dict = row.to_dict()
+                if dist:
+                    row_dict['distributor_data'] = dist
+                result[pn].append(row_dict)
+        return result
+
+    # -------------------------------------------------------------------------
+    # METODI PUBBLICI - ALT_SOURCES (v4.0)
+    # -------------------------------------------------------------------------
+
+    def get_alt_sources(self, part_number: str) -> List[Dict[str, Any]]:
+        """Restituisce le fonti alternative per un Part Number."""
+        df = self._load_sheet(SHEET_ALT_SOURCES)
+        if df.empty:
+            return []
+        pn_norm = self._normalize_pn(part_number)
+        mask = df['Part_Number'].astype(str).str.upper() == pn_norm
+        return df[mask].to_dict('records')
+
+    def get_all_alt_sources(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Restituisce tutte le fonti alternative, raggruppate per PN."""
+        df = self._load_sheet(SHEET_ALT_SOURCES)
+        if df.empty:
+            return {}
+        result = {}
+        for _, row in df.iterrows():
+            pn = str(row.get('Part_Number', '')).upper()
+            if pn:
+                if pn not in result:
+                    result[pn] = []
+                result[pn].append(row.to_dict())
+        return result
+
+    def add_alt_source(self, part_number: str, data: Dict[str, Any]) -> bool:
+        """Aggiunge una fonte alternativa per un Part Number."""
+        try:
+            df = self._load_sheet(SHEET_ALT_SOURCES)
+            pn_norm = self._normalize_pn(part_number)
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            supplier = str(data.get('Supplier_Name', '')).strip()
+
+            data['Part_Number'] = pn_norm
+            data['Created_at'] = now
+
+            if not df.empty:
+                mask = (
+                    (df['Part_Number'].astype(str).str.upper() == pn_norm) &
+                    (df['Supplier_Name'].astype(str).str.upper() == supplier.upper())
+                )
+                if mask.any():
+                    for col in df.columns:
+                        if col in data and col != 'Created_at':
+                            df.loc[mask, col] = data[col]
+                    self._save_sheet(df, SHEET_ALT_SOURCES)
+                    return True
+
+            new_row = pd.DataFrame([data])
+            df = pd.concat([df, new_row], ignore_index=True)
+            self._save_sheet(df, SHEET_ALT_SOURCES)
+            return True
+        except Exception as e:
+            print(f"Errore nell'aggiungere fonte alternativa: {e}")
+            return False
+
+    def remove_alt_source(self, part_number: str, supplier_name: str) -> bool:
+        """Rimuove una fonte alternativa."""
+        try:
+            df = self._load_sheet(SHEET_ALT_SOURCES)
+            if df.empty:
+                return False
+            pn_norm = self._normalize_pn(part_number)
+            mask = (
+                (df['Part_Number'].astype(str).str.upper() == pn_norm) &
+                (df['Supplier_Name'].astype(str).str.upper() == supplier_name.upper())
+            )
+            df = df[~mask]
+            self._save_sheet(df, SHEET_ALT_SOURCES)
+            return True
+        except Exception as e:
+            print(f"Errore nella rimozione fonte alternativa: {e}")
+            return False
+
+    # -------------------------------------------------------------------------
+    # METODI PUBBLICI - SUPPLIER_PROFILES (v4.0)
+    # -------------------------------------------------------------------------
+
+    def get_all_supplier_profiles(self) -> List[Dict[str, Any]]:
+        """Restituisce tutti i profili fornitore."""
+        df = self._load_sheet(SHEET_SUPPLIER_PROFILES)
+        if df.empty:
+            return []
+        return df.to_dict('records')
+
+    def get_supplier_profile(self, supplier_name: str) -> Optional[Dict[str, Any]]:
+        """Cerca il profilo di un fornitore per nome."""
+        df = self._load_sheet(SHEET_SUPPLIER_PROFILES)
+        if df.empty:
+            return None
+        mask = df['Supplier_Name'].astype(str).str.upper() == supplier_name.upper().strip()
+        if mask.any():
+            return df[mask].iloc[0].to_dict()
+        return None
+
+    def add_supplier_profile(self, data: Dict[str, Any]) -> bool:
+        """Aggiunge o aggiorna un profilo fornitore."""
+        try:
+            df = self._load_sheet(SHEET_SUPPLIER_PROFILES)
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+            supplier_id = data.get('Supplier_ID', '')
+            supplier_name = str(data.get('Supplier_Name', '')).strip()
+
+            if not supplier_id and supplier_name:
+                # Auto-genera ID dal nome
+                supplier_id = 'SUP_' + supplier_name.upper().replace(' ', '_')[:10]
+
+            data['Supplier_ID'] = supplier_id
+            data['Updated_at'] = now
+
+            if df.empty:
+                data['Created_at'] = now
+                df = pd.DataFrame([data])
+            else:
+                mask = df['Supplier_Name'].astype(str).str.upper() == supplier_name.upper()
+                if mask.any():
+                    for col in df.columns:
+                        if col in data and col != 'Created_at':
+                            df.loc[mask, col] = data[col]
+                else:
+                    data['Created_at'] = now
+                    new_row = pd.DataFrame([data])
+                    df = pd.concat([df, new_row], ignore_index=True)
+
+            self._save_sheet(df, SHEET_SUPPLIER_PROFILES)
+            return True
+        except Exception as e:
+            print(f"Errore nell'aggiungere profilo fornitore: {e}")
+            return False
+
+    def remove_supplier_profile(self, supplier_name: str) -> bool:
+        """Rimuove un profilo fornitore."""
+        try:
+            df = self._load_sheet(SHEET_SUPPLIER_PROFILES)
+            if df.empty:
+                return False
+            mask = df['Supplier_Name'].astype(str).str.upper() == supplier_name.upper()
+            df = df[~mask]
+            self._save_sheet(df, SHEET_SUPPLIER_PROFILES)
+            return True
+        except Exception as e:
+            print(f"Errore nella rimozione profilo fornitore: {e}")
+            return False
+
     def get_stats(self) -> Dict[str, Any]:
         """Restituisce statistiche sul database."""
         stats = {
@@ -744,9 +1229,19 @@ class PartNumberDatabase:
 
         # Tier-2 Suppliers
         df_t2 = self._load_sheet(SHEET_TIER2_SUPPLIERS)
-        if not df_t2.empty:
-            stats['total_tier2_suppliers'] = len(df_t2)
-        else:
-            stats['total_tier2_suppliers'] = 0
+        stats['total_tier2_suppliers'] = len(df_t2) if not df_t2.empty else 0
+
+        # v4.0 - Filiera commerciale
+        df_ems = self._load_sheet(SHEET_EMS_PROVIDERS)
+        stats['total_ems_providers'] = len(df_ems) if not df_ems.empty else 0
+
+        df_dist = self._load_sheet(SHEET_DISTRIBUTORS)
+        stats['total_distributors'] = len(df_dist) if not df_dist.empty else 0
+
+        df_alt = self._load_sheet(SHEET_ALT_SOURCES)
+        stats['total_alt_sources'] = len(df_alt) if not df_alt.empty else 0
+
+        df_sup = self._load_sheet(SHEET_SUPPLIER_PROFILES)
+        stats['total_supplier_profiles'] = len(df_sup) if not df_sup.empty else 0
 
         return stats

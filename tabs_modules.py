@@ -27,6 +27,8 @@ from tier2_visibility import (
     MATERIAL_DATABASE,
     CATEGORY_MATERIAL_MAPPINGS,
 )
+from ems_risk import analyze_bom_ems_risk
+from distributor_risk import analyze_bom_distributor_risk, simulate_distributor_stockout
 
 # =============================================================================
 # UTILITY FUNCTIONS
@@ -1164,20 +1166,27 @@ def render_tab_gestione_database():
     """Tab 6: Gestione Database Part Numbers"""
     st.header("Gestione Database Part Numbers")
 
-    tab6_1, tab6_2, tab6_3 = st.tabs(["Statistiche", "Aggiungi Part Number", "Gestione Clienti"])
+    tab6_1, tab6_2, tab6_3, tab6_ems, tab6_dist, tab6_alt, tab6_sup = st.tabs([
+        "Statistiche", "Aggiungi Part Number", "Gestione Clienti",
+        "EMS Providers", "Distributori", "Fonti Alternative", "Profili Fornitore"
+    ])
 
     with tab6_1:
         st.subheader("Statistiche Database")
 
         stats = st.session_state.db.get_stats()
 
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
-            st.metric("Totale Part Numbers", stats['total_part_numbers'])
+            st.metric("Part Numbers", stats['total_part_numbers'])
         with col2:
-            st.metric("Totale Clienti", stats['total_clients'])
+            st.metric("Clienti", stats['total_clients'])
         with col3:
-            st.metric("Record Cliente", stats['total_client_records'])
+            st.metric("EMS Providers", stats.get('total_ems_providers', 0))
+        with col4:
+            st.metric("Distributori", stats.get('total_distributors', 0))
+        with col5:
+            st.metric("Profili Fornitore", stats.get('total_supplier_profiles', 0))
 
         st.markdown("---")
 
@@ -1331,6 +1340,254 @@ def render_tab_gestione_database():
                     st.rerun()
                 else:
                     st.error("Errore nell'aggiunta del cliente")
+
+    # -------------------------------------------------------------------------
+    # SUB-TAB: EMS PROVIDERS (v4.0)
+    # -------------------------------------------------------------------------
+    with tab6_ems:
+        st.subheader("EMS Providers")
+        st.markdown("Gestisci i profili dei terzisti EMS (Foxconn, Jabil, Flextronics, ecc.)")
+
+        existing_ems = st.session_state.db.get_all_ems_providers()
+        if existing_ems:
+            st.dataframe(pd.DataFrame(existing_ems), use_container_width=True)
+
+            st.markdown("**Rimuovi EMS Provider:**")
+            ems_ids = [e.get('EMS_ID', '') for e in existing_ems]
+            ems_to_del = st.selectbox("Seleziona EMS da rimuovere", options=[''] + ems_ids, key="ems_del_sel")
+            if ems_to_del and st.button("Rimuovi EMS", key="ems_del_btn"):
+                if st.session_state.db.remove_ems_provider(ems_to_del):
+                    st.success("EMS rimosso")
+                    st.rerun()
+
+        st.markdown("---")
+        st.subheader("Aggiungi / Aggiorna EMS Provider")
+
+        with st.form("add_ems_form"):
+            col1, col2 = st.columns(2)
+            with col1:
+                ems_name_f = st.text_input("EMS Name *", placeholder="es. Foxconn, Jabil, Flex")
+                ems_country_f = st.text_input("Country *", placeholder="es. China, Malaysia")
+                ems_fin_f = st.selectbox("Financial Health", ["A", "B", "C", "D"])
+            with col2:
+                ems_cap_f = st.slider("Capacity Utilization (%)", 0, 100, 75)
+                ems_backup_f = st.number_input("Backup Sites Count", min_value=0, value=0)
+                ems_years_f = st.number_input("Years in Business", min_value=0, value=10)
+            ems_certs_f = st.text_input("Certifications (comma-sep.)", placeholder="ISO9001, IATF16949, AS9100")
+            ems_notes_f = st.text_area("Note", height=60)
+
+            if st.form_submit_button("Salva EMS Provider", type="primary"):
+                if not ems_name_f or not ems_country_f:
+                    st.error("Nome e Paese sono obbligatori")
+                else:
+                    data = {
+                        'EMS_Name': ems_name_f,
+                        'Country': ems_country_f,
+                        'Financial_Health': ems_fin_f,
+                        'Capacity_Utilization_Pct': ems_cap_f,
+                        'Backup_Sites_Count': ems_backup_f,
+                        'Years_Business': ems_years_f,
+                        'Certifications': ems_certs_f,
+                        'Notes': ems_notes_f,
+                    }
+                    if st.session_state.db.add_ems_provider(data):
+                        st.success(f"EMS Provider **{ems_name_f}** salvato!")
+                        st.rerun()
+                    else:
+                        st.error("Errore nel salvataggio")
+
+    # -------------------------------------------------------------------------
+    # SUB-TAB: DISTRIBUTORI (v4.0)
+    # -------------------------------------------------------------------------
+    with tab6_dist:
+        st.subheader("Distributori")
+        st.markdown("Gestisci distributori (Arrow, Avnet, TTI, Digi-Key, ecc.) e le loro associazioni ai Part Numbers.")
+
+        existing_dists = st.session_state.db.get_all_distributors()
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**Distributori registrati:**")
+            if existing_dists:
+                st.dataframe(pd.DataFrame(existing_dists)[[
+                    'Distributor_ID', 'Name', 'Country', 'Financial_Health',
+                    'Lead_Time_Markup_Weeks', 'Stock_Level_Weeks_Coverage'
+                ]], use_container_width=True)
+            else:
+                st.info("Nessun distributore registrato")
+
+        with col2:
+            st.markdown("**Aggiungi / Aggiorna Distributore:**")
+            with st.form("add_dist_form"):
+                dist_name_f = st.text_input("Nome *", placeholder="es. Arrow Electronics")
+                dist_country_f = st.text_input("Paese *", placeholder="es. USA")
+                dist_fin_f = st.selectbox("Financial Health", ["A", "B", "C", "D"])
+                dist_markup_f = st.number_input("Lead Time Markup (settimane)", min_value=0, value=2)
+                dist_stock_f = st.number_input("Stock Coverage (settimane medie)", min_value=0.0, value=4.0, step=0.5)
+                dist_certs_f = st.text_input("Certificazioni", placeholder="AS9120, ISO9001")
+                dist_backup_f = st.number_input("Backup Distributors Count", min_value=0, value=0)
+                dist_notes_f = st.text_area("Note", height=60)
+
+                if st.form_submit_button("Salva Distributore", type="primary"):
+                    if not dist_name_f or not dist_country_f:
+                        st.error("Nome e Paese obbligatori")
+                    else:
+                        d = {
+                            'Name': dist_name_f, 'Country': dist_country_f,
+                            'Financial_Health': dist_fin_f,
+                            'Lead_Time_Markup_Weeks': dist_markup_f,
+                            'Stock_Level_Weeks_Coverage': dist_stock_f,
+                            'Certifications': dist_certs_f,
+                            'Backup_Count': dist_backup_f,
+                            'Notes': dist_notes_f,
+                        }
+                        if st.session_state.db.add_distributor(d):
+                            st.success(f"Distributore **{dist_name_f}** salvato!")
+                            st.rerun()
+                        else:
+                            st.error("Errore nel salvataggio")
+
+        st.markdown("---")
+        st.subheader("Associa Distributore a Part Number")
+
+        if existing_dists:
+            with st.form("add_pn_dist_form"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    pn_for_dist = st.text_input("Part Number *")
+                    dist_options = {f"{d['Name']} ({d['Distributor_ID']})": d['Distributor_ID'] for d in existing_dists}
+                    sel_dist_label = st.selectbox("Distributore *", options=list(dist_options.keys()))
+                with col2:
+                    dist_priority = st.selectbox("Priority", ["Primary", "Secondary"])
+                    dist_alloc_pct = st.slider("Allocation %", 0, 100, 100)
+
+                if st.form_submit_button("Associa", type="primary"):
+                    if not pn_for_dist:
+                        st.error("Part Number obbligatorio")
+                    else:
+                        if st.session_state.db.add_part_distributor(pn_for_dist, {
+                            'Distributor_ID': dist_options[sel_dist_label],
+                            'Priority': dist_priority,
+                            'Allocation_Pct': dist_alloc_pct,
+                        }):
+                            st.success(f"Associato {sel_dist_label} a {pn_for_dist}")
+                        else:
+                            st.error("Errore")
+        else:
+            st.info("Aggiungi prima un distributore per poterlo associare a un Part Number")
+
+    # -------------------------------------------------------------------------
+    # SUB-TAB: FONTI ALTERNATIVE (v4.0)
+    # -------------------------------------------------------------------------
+    with tab6_alt:
+        st.subheader("Fonti Alternative (Multi-sourcing)")
+        st.markdown("""
+        Registra le fonti alternative per ogni Part Number, **includendo il paese di fabbricazione**.
+        Il sistema rileverà automaticamente se tutte le alternative convergono sullo stesso paese
+        (hidden single source).
+        """)
+
+        with st.form("add_alt_source_form"):
+            col1, col2 = st.columns(2)
+            with col1:
+                alt_pn = st.text_input("Part Number *")
+                alt_supplier = st.text_input("Supplier Name *", placeholder="es. Infineon")
+                alt_frontend = st.text_input("Frontend Country *", placeholder="es. Taiwan")
+                alt_backend = st.text_input("Backend Country", placeholder="es. Malaysia")
+            with col2:
+                alt_lt = st.number_input("Lead Time (settimane)", min_value=0, value=12)
+                alt_fin = st.selectbox("Financial Health", ["A", "B", "C", "D"])
+                alt_qual = st.selectbox("Qualification Status", ["Qualified", "In_Progress", "Not_Started"])
+                alt_alloc = st.slider("Allocation %", 0, 100, 0)
+            alt_notes = st.text_area("Note", height=60)
+
+            if st.form_submit_button("Aggiungi Fonte Alternativa", type="primary"):
+                if not alt_pn or not alt_supplier or not alt_frontend:
+                    st.error("Part Number, Supplier e Frontend Country sono obbligatori")
+                else:
+                    d = {
+                        'Supplier_Name': alt_supplier,
+                        'Frontend_Country': alt_frontend,
+                        'Backend_Country': alt_backend,
+                        'Lead_Time_Weeks': alt_lt,
+                        'Financial_Health': alt_fin,
+                        'Qualification_Status': alt_qual,
+                        'Allocation_Pct': alt_alloc,
+                        'Notes': alt_notes,
+                    }
+                    if st.session_state.db.add_alt_source(alt_pn, d):
+                        st.success(f"Fonte alternativa aggiunta per {alt_pn}")
+                        st.rerun()
+                    else:
+                        st.error("Errore nel salvataggio")
+
+        st.markdown("---")
+        st.subheader("Fonti Alternative Registrate")
+        all_alt = st.session_state.db.get_all_alt_sources()
+        if all_alt:
+            rows = []
+            for pn, sources in all_alt.items():
+                for s in sources:
+                    rows.append({'Part Number': pn, **{k: v for k, v in s.items() if k != 'Part_Number'}})
+            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+        else:
+            st.info("Nessuna fonte alternativa registrata")
+
+    # -------------------------------------------------------------------------
+    # SUB-TAB: PROFILI FORNITORE (v4.0)
+    # -------------------------------------------------------------------------
+    with tab6_sup:
+        st.subheader("Profili Fornitore (Tier1→Tier2 Linkage)")
+        st.markdown("""
+        Registra il profilo specifico di ogni fornitore Tier-1 con informazioni sul fab usato
+        e le dipendenze materiali reali (invece dei default categoria+tech_node).
+
+        Il campo **Key Materials Override** (JSON) permette di specificare dipendenze materiali
+        personalizzate per questo fornitore. Esempio:
+        `{"silicon_wafers": {"dominant_country": "japan", "concentration_risk": 0.60}}`
+        """)
+
+        existing_profiles = st.session_state.db.get_all_supplier_profiles()
+        if existing_profiles:
+            st.dataframe(pd.DataFrame(existing_profiles)[[
+                'Supplier_Name', 'Primary_Fab', 'Primary_Fab_Country', 'Wafer_Source'
+            ]], use_container_width=True)
+
+        st.markdown("---")
+        st.subheader("Aggiungi / Aggiorna Profilo Fornitore")
+
+        with st.form("add_supplier_profile_form"):
+            col1, col2 = st.columns(2)
+            with col1:
+                sp_name = st.text_input("Supplier Name *", placeholder="es. STMicroelectronics")
+                sp_fab = st.text_input("Primary Fab", placeholder="es. TSMC Fab 18, Agrate")
+                sp_fab_country = st.text_input("Primary Fab Country", placeholder="es. Italy, Taiwan")
+            with col2:
+                sp_wafer = st.text_input("Wafer Source", placeholder="es. Shin-Etsu (JP)")
+                sp_notes = st.text_area("Note", height=60)
+            sp_override = st.text_area(
+                "Key Materials Override (JSON, opzionale)",
+                height=80,
+                placeholder='{"silicon_wafers": {"dominant_country": "japan", "concentration_risk": 0.55}}'
+            )
+
+            if st.form_submit_button("Salva Profilo Fornitore", type="primary"):
+                if not sp_name:
+                    st.error("Supplier Name obbligatorio")
+                else:
+                    d = {
+                        'Supplier_Name': sp_name,
+                        'Primary_Fab': sp_fab,
+                        'Primary_Fab_Country': sp_fab_country,
+                        'Wafer_Source': sp_wafer,
+                        'Key_Materials_Override': sp_override,
+                        'Notes': sp_notes,
+                    }
+                    if st.session_state.db.add_supplier_profile(d):
+                        st.success(f"Profilo fornitore **{sp_name}** salvato!")
+                        st.rerun()
+                    else:
+                        st.error("Errore nel salvataggio")
 
 
 # =============================================================================
@@ -2000,6 +2257,70 @@ def render_tab_dashboard_esecutiva():
     st.markdown("---")
 
     # =============================================================================
+    # SEZIONE 4b: ALERT FILIERA COMMERCIALE (v4.0)
+    # =============================================================================
+    st.subheader("🔗 Alert Filiera Commerciale")
+
+    # Hidden Single Source
+    hidden_spof_list = [
+        r for r in risks
+        if r.get('hidden_single_source', {}).get('hidden_spof_score', 0) >= 4
+    ]
+    # Mono-distributore
+    mono_dist_list = [
+        r for r in risks
+        if r.get('distributor_risk', {}).get('distributor_count', 1) == 1
+           and r.get('distributor_risk', {}).get('has_distributors', True)
+    ]
+    # EMS single-site
+    ems_spof_list = [
+        r for r in risks
+        if r.get('ems_risk', {}).get('ems_used') and r.get('ems_risk', {}).get('ems_score', 0) >= 12
+    ]
+
+    filiera_col1, filiera_col2, filiera_col3 = st.columns(3)
+
+    with filiera_col1:
+        if hidden_spof_list:
+            st.error(f"**Hidden Single Source: {len(hidden_spof_list)} componenti**")
+            st.markdown(
+                "Questi componenti hanno fonti alternative ma condividono lo stesso paese di fab:"
+            )
+            for r in hidden_spof_list[:5]:
+                hs = r.get('hidden_single_source', {})
+                st.markdown(
+                    f"- **{r.get('part_number')}** – {hs.get('overlap_country', '?').title()} "
+                    f"({hs.get('overlap_count', 0)}/{hs.get('total_sources', 0)} fonti)"
+                )
+        else:
+            st.success("Nessun Hidden Single Source rilevato")
+
+    with filiera_col2:
+        if mono_dist_list:
+            st.warning(f"**Mono-Distributore: {len(mono_dist_list)} componenti**")
+            for r in mono_dist_list[:5]:
+                dist = r.get('distributor_risk', {})
+                st.markdown(
+                    f"- **{r.get('part_number')}** → {dist.get('primary_distributor', 'N/A')}"
+                )
+        else:
+            st.success("Nessun componente mono-distributore")
+
+    with filiera_col3:
+        if ems_spof_list:
+            st.warning(f"**EMS ad alto rischio: {len(ems_spof_list)} componenti**")
+            for r in ems_spof_list[:5]:
+                ems = r.get('ems_risk', {})
+                st.markdown(
+                    f"- **{r.get('part_number')}** – {ems.get('ems_name', 'N/A')} "
+                    f"(score {ems.get('ems_score', 0)})"
+                )
+        else:
+            st.success("Nessun EMS critico")
+
+    st.markdown("---")
+
+    # =============================================================================
     # SEZIONE 5: RIEPILOGO AZIONI RACCOMANDATE
     # =============================================================================
     st.subheader("✅ Azioni Raccomandate per Priorità")
@@ -2100,128 +2421,296 @@ def render_tab_dashboard_esecutiva():
 # =============================================================================
 
 def render_tab_guida():
-    """Tab 8: Guida all'uso """
+    """Tab Guida: documentazione completa della piattaforma v4.0"""
+
+    st.title("Supply Chain Resilience Platform — v4.0")
+    st.markdown(
+        "Strumento B2B per la valutazione e mitigazione proattiva del rischio nella "
+        "supply chain elettronica. Copre l'intera filiera verticale: dai materiali Tier-2 "
+        "fino al canale distributivo."
+    )
+
+    st.markdown("---")
+
+    # =========================================================================
+    # ARCHITETTURA
+    # =========================================================================
+    st.header("Architettura della Piattaforma")
 
     st.markdown("""
-    ## Architettura del Sistema        
-    ### Importa BOM (Bill of Materials) da file Excel contenenti i componenti elettronici di un cliente
-    ### Analizza i rischi dei componenti secondo molteplici dimensioni:
-    - Rischi funzionali (dipendenze tra componenti)
-    - Rischi geopolitici (localizzazione degli impianti di produzione)
-    - Rischi di fornitura (single source, lead time, EOL, ecc.)
-    - Costi di switching (complessità di sostituzione)
-    ### Fornisce visualizzazioni per prendere decisioni:
-    - Albero delle dipendenze per vedere catene critiche
-    - Mappa geopolitica per rischi per regione
-    - Dashboard con priorità di azione
-    
-    È uno strumento B2B per decision maker che devono valutare e mitigare i rischi nella catena di fornitura elettronica (es. aziende automotive, aerospaziali, consumer electronics).
+La piattaforma modella **quattro livelli della supply chain** in modo integrato:
 
+```
+Materiali Tier-2/3          Neon gas, photoresists, wafer, terre rare, SiC...
+        ↓
+Fornitore Tier-1            STMicro, Infineon, NXP, TI, Renesas...
+        ↓
+EMS / Terzista              Foxconn, Flextronics, Jabil, produzione in house...
+        ↓
+Canale Distributivo         Arrow, Avnet, TTI, Digi-Key...
+        ↓
+Cliente (BOM)               Componenti elettronici in produzione
+```
 
+Il **risk engine deterministico** aggrega 18 fattori in uno score 0–100 per componente,
+con cap a 100 e classificazione ALTO/MEDIO/BASSO.
+    """)
 
-    ### Modulo 1: Albero Dipendenze (Functional Chain Risk)
-    - Costruisce un **grafo direzionale** delle dipendenze tra componenti
-    - Identifica i **Single Points of Failure** (SPOF)
-    - Propaga il rischio lungo le catene: se il PMIC e' ad alto rischio,
-      anche l'MPU che ne dipende eredita quello score
-    - Calcola **score di coppia**: max(risk_A, risk_B) per componenti collegati
+    st.markdown("---")
 
-    ### Modulo 2: Rischio Geopolitico Frontend/Backend
-    - **Frontend** (60% del peso): dove viene fabbricato il wafer (es. TSMC Taiwan)
-    - **Backend** (40% del peso): dove avviene assemblaggio/test (es. ASE Malaysia)
-    - **Technology Node Risk**: nodi <= 7nm (CRITICO, solo TSMC/Samsung) fino a >= 130nm (BASSO)
+    # =========================================================================
+    # TAB DISPONIBILI
+    # =========================================================================
+    st.header("Tab della Piattaforma")
 
-    | Regione | Frontend Risk | Backend Risk |
-    |---------|-------------|-------------|
-    | Taiwan | CRITICO (25) | MEDIO (10) |
-    | China | ALTO (20) | MEDIO-ALTO (12) |
-    | Korea | MEDIO-ALTO (15) | MEDIO-BASSO (8) |
-    | Malaysia | MEDIO (10) | ALTO (15) |
-    | USA/EU | BASSO (3-5) | BASSO (2-3) |
+    tab_docs = {
+        "Analisi Multipla": "Carica una BOM da file Excel (o seleziona un esempio) ed esegui l'analisi batch. "
+                            "Tutti i tab successivi si popolano da qui. Supporta file .xlsx e .csv con colonna 'Part Number'.",
+        "Dashboard Esecutiva": "One-pager per il management: KPI principali, heat map categorie × livello rischio, "
+                               "top 10 componenti a rischio, alert filiera commerciale (hidden SPOF, mono-distributore, EMS critico), "
+                               "azioni raccomandate per priorità.",
+        "Albero Dipendenze": "Grafo direzionale delle dipendenze funzionali tra componenti. "
+                             "Identifica SPOF, propaga il rischio lungo le catene, calcola score di coppia. "
+                             "Richiede NetworkX (pip install networkx).",
+        "Mappa Geopolitica": "Visualizza i rischi geopolitici Frontend (wafer fab) e Backend (assembly/test) "
+                             "su mappa interattiva. Heatmap concentrazione paesi e analisi per fornitore.",
+        "Tier-2/3 Visibility": "Analizza le dipendenze sui materiali critici a monte dei fornitori Tier-1 "
+                               "(neon gas, photoresists, wafer, terre rare, SiC, palladio, ecc.). "
+                               "Con profili fornitore registrati, usa dati fab-specifici invece dei default per categoria.",
+        "Costi di Switching": "Stima le ore-uomo per sostituire un componente: porting SW, validazione, certificazione. "
+                              "Classificazione TRIVIALE/MODERATO/COMPLESSO/CRITICO.",
+        "Filiera Commerciale": "**Nuovo v4.0** — Analisi EMS risk, rischio distributore, hidden single source detection, "
+                               "simulatore stock-out distributore.",
+        "Simulatore What-If": "Simula 12 scenari predefiniti (blocco Taiwan, carenze materiali, stock-out distributore, "
+                              "EMS overload, aumento lead time). Calcola impatto su buffer stock e impatto finanziario.",
+        "Gestione Database": "CRUD completo per tutti i dati: part numbers, clienti, EMS providers, distributori, "
+                             "fonti alternative, profili fornitore. Tutti i dati si inseriscono qui — mai modificando l'Excel manualmente.",
+    }
 
-    ### Modulo 3: Costi di Switching
-    Stima le ore-uomo per sostituire un componente:
+    for tab_name, description in tab_docs.items():
+        with st.expander(f"**{tab_name}**"):
+            st.markdown(description)
 
-    | OS Type | Rate (ore/KB) | Esempio 2048KB |
-    |---------|--------------|----------------|
-    | Baremetal | 0.5 | 1,024h |
-    | RTOS | 1.0 | 2,048h |
-    | Linux | 2.0 | 4,096h |
+    st.markdown("---")
 
-    Moltiplicatori certificazione:
-    - AEC-Q100 (automotive): x1.5
-    - MIL-STD (military): x2.0
-    - IEC 62443 (cybersecurity): x1.3
+    # =========================================================================
+    # MODELLO DI SCORING — 18 FATTORI
+    # =========================================================================
+    st.header("Modello di Scoring — 18 Fattori")
+    st.markdown("Score finale = somma fattori 1–18, capped a 100.")
 
-    Classificazione:
-    - **TRIVIALE** (<100h): componente passivo, sostituzione diretta
-    - **MODERATO** (100-500h): MCU semplice con baremetal
-    - **COMPLESSO** (500-2000h): MCU con RTOS o componente con certificazioni
-    - **CRITICO** (>2000h): MPU con Linux, equivale a redesign completo
+    st.markdown("""
+| # | Fattore | Max | Livello supply chain |
+|---|---------|-----|----------------------|
+| 1 | Concentrazione Geografica (Frontend/Backend) | 25 | Fornitore Tier-1 |
+| 2 | Single Source (stabilimenti produttivi) | 20 | Fornitore Tier-1 |
+| 3 | Lead Time | 15 | Fornitore Tier-1 |
+| 4 | Buffer Stock | −15 (bonus riduzione) | Cliente |
+| 5 | Dipendenze Funzionali (chain risk) | 10 | BOM |
+| 6 | Proprietary / Commodity | 10 | Componente |
+| 7 | Certificazioni richieste | 5 | Componente |
+| 8 | EOL Status | +15 | Fornitore Tier-1 |
+| 9 | Alternative Sources (n. fonti) | +10 / −3 | Mercato |
+| 10 | Salute Finanziaria Fornitore | +8 | Fornitore Tier-1 |
+| 11 | Allocation Status | +10 | Mercato |
+| 12 | Aumento Prezzo (% ultimo ciclo) | +5 | Mercato |
+| 13 | Package Type | +3 | Componente |
+| 14 | Technology Node | +5 | Wafer fab |
+| 15 | Tier-2/3 Supply Chain | +15 | Materiali Tier-2 |
+| 16 | **EMS Risk** | **+12** | **EMS / Terzista** |
+| 17 | **Distributor Risk** | **+10** | **Canale Distributivo** |
+| 18 | **Hidden Single Source** | **+12** | **Multi-sourcing** |
+    """)
 
-    ### Fattori di Rischio (14 fattori, score capped a 100)
+    st.markdown("---")
 
-    | # | Fattore | Punti Max | Note |
-    |---|---------|-----------|------|
-    | 1 | Concentrazione Geografica | 25 | Frontend/Backend separati |
-    | 2 | Single Source (stabilimenti) | 20 | Numero di plant produttivi |
-    | 3 | Lead Time | 15 | Soglie 8/16/26 settimane |
-    | 4 | Buffer Stock | 15 | Riduzione proporzionale se ampio |
-    | 5 | Dipendenze | 10 | Chain risk propagation |
-    | 6 | Proprietary/Commodity | 10 | Sostituibilita' del componente |
-    | 7 | Certificazioni | 5 | Tempo di riqualifica |
-    | 8 | **EOL Status** | **+15** | Active/NRND/Last_Buy/EOL/Obsolete |
-    | 9 | **Alternative Sources** | **+10 / -3** | Fonti alternative sul mercato |
-    | 10 | **Salute Finanziaria Fornitore** | **+8** | Rating A/B/C/D |
-    | 11 | **Allocation Status** | **+10** | Normal/Constrained/Allocated |
-    | 12 | **Aumento Prezzo** | **+5** | Ultimo aumento % come segnale di tensione |
-    | 13 | **Package Type** | **+3** | Package avanzati (WLCSP, FCBGA...) |
-    | 14 | **MTBF / Automotive Grade** | info | Informativi, non modificano lo score |
-    | + | Technology Node | +5 | Nodi avanzati <= 7nm |
-    | 15 | **Tier-2/3 Supply Chain** | **+15** | Concentrazione materiali Tier-2 (neon, wafer, photoresists) |
-    | info | Switching Cost | n/a | Ore-uomo per sostituzione |
+    # =========================================================================
+    # DETTAGLIO NUOVI MODULI v4.0
+    # =========================================================================
+    st.header("Nuovi Moduli v4.0")
 
-    ### Modulo 4: Visibilita' Tier-2/3 Supply Chain
-    Analizza le dipendenze a monte dei fornitori Tier-1:
-    - **Mappature predefinite**: ogni combinazione categoria + nodo tecnologico
-      e' associata ai materiali critici necessari (13 materiali tracciati)
-    - **Dati custom**: possibilita' di aggiungere fornitori e materiali Tier-2
-      specifici nel database
-    - **Heatmap concentrazione**: visualizzazione della dipendenza per paese
-    - **Integrazione rischio**: il tier2_score (+0-15 punti) viene aggiunto
-      al risk score di ogni componente
+    col1, col2 = st.columns(2)
 
-    | Materiale | Paese Dominante | Concentrazione |
-    |-----------|----------------|----------------|
-    | Neon Gas | Ucraina/Russia | ~70% |
-    | Photoresists | Giappone | ~90% |
-    | Silicon Wafers | Giappone | ~55% |
-    | Terre Rare | Cina | ~70% |
-    | SiC Substrati | USA | ~60% |
-    | Palladium Wire | Sudafrica/Russia | ~65% |
+    with col1:
+        st.subheader("EMS Risk (Fattore 16 — max +12 pt)")
+        st.markdown("""
+Valuta il rischio del terzista/EMS su 6 dimensioni:
 
-    ### Valori ammessi per i nuovi campi Excel
+| Sub-fattore | Max |
+|-------------|-----|
+| Salute finanziaria (A→D) | 15 pt |
+| Utilizzo capacità (>95% = CRITICO) | 15 pt |
+| Siti di backup (0 = single-site) | 12 pt |
+| Concentrazione geografica | 15 pt |
+| Gap certificazioni (IATF16949, ISO9001) | 10 pt |
+| Anni di attività (<5 anni) | 5 pt |
 
-    | Campo | Valori | Esempio |
-    |-------|--------|---------|
-    | EOL_Status | Active, NRND, Last_Buy, EOL, Obsolete | Active |
-    | Number_of_Alternative_Sources | 0, 1, 2, 3, ... | 2 |
-    | Supplier_Financial_Health | A, B, C, D | A |
-    | Allocation_Status | Normal, Constrained, Allocated | Normal |
-    | Last_Price_Increase_Pct | Numero (%) | 15 |
-    | Package_Type | QFP, BGA, WLCSP, QFN, SOP, DIP, CSP... | BGA |
-    | Automotive_Grade | None, AEC-Q100, AEC-Q101, AEC-Q200 | AEC-Q100 |
-    | MTBF_Hours | Numero (ore) | 100000 |
+Score EMS cappato a **30 pt**, contribuisce al risk engine come +12 pt max.
 
-    ### Flusso di Lavoro Consigliato
-    1. Seleziona il cliente dalla sidebar
-    2. Vai su **Analisi Multipla** e inserisci i Part Numbers della BOM
-    3. Analizza i risultati nei tab dedicati:
-       - **Albero Dipendenze**: per capire le catene funzionali
-       - **Mappa Geopolitica**: per visualizzare i rischi per regione
-       - **Tier-2/3 Visibility**: per analizzare le dipendenze sui materiali critici
-       - **Costi di Switching**: per prioritizzare le azioni di mitigazione
-       - **Simulatore What-If**: per simulare scenari di disruption (incluse carenze materiali Tier-2)
+Se non è disponibile un profilo EMS completo, viene usata solo la stima geografica dalla `EMS_Location`.
+        """)
+
+        st.subheader("Hidden Single Source (Fattore 18 — max +12 pt)")
+        st.markdown("""
+Rileva quando tutte le fonti alternative di un componente
+convergono sullo stesso paese di fabbricazione (Frontend_Country).
+
+Esempio: 3 fornitori alternativi tutti con fab in Taiwan
+→ diversificazione apparente, rischio reale invariato.
+
+| Overlap ratio | Penalità | Livello |
+|---------------|----------|---------|
+| 100% (tutte) | +12 pt | CRITICO |
+| ≥ 67% | +7 pt | ALTO |
+| ≥ 50% | +4 pt | MEDIO |
+
+Richiede fonti alternative registrate in **Gestione Database → Fonti Alternative**.
+        """)
+
+    with col2:
+        st.subheader("Distributor Risk (Fattore 17 — max +10 pt)")
+        st.markdown("""
+Valuta il rischio del canale distributivo su 5 dimensioni:
+
+| Sub-fattore | Max |
+|-------------|-----|
+| Mono-distributore (solo 1 dist.) | 10 pt |
+| Stock coverage < lead time | 8 pt |
+| Salute finanziaria distributore | 10 pt |
+| Lead time markup (settimane aggiuntive) | 5 pt |
+| Concentrazione geografica distributore | 5 pt |
+
+Score distributore cappato a **25 pt**, contribuisce al risk engine come +10 pt max.
+
+Se stock coverage ≥ 2× lead time → **bonus −2 pt** (buffer ampio).
+        """)
+
+        st.subheader("Tier1→Tier2 Supplier-Specific Linkage")
+        st.markdown("""
+Gerarchia priorità per le dipendenze materiali:
+
+1. **Component_Materials** custom (override per singolo PN)
+2. **Profilo Fornitore** (Key_Materials_Override JSON da Gestione DB)
+3. **Default** categoria + technology node
+
+Permette di distinguere:
+- STM32 (fab Agrate IT) → wafer Shin-Etsu (JP), non generici Taiwan
+- NXP i.MX (fab TSMC) → neon gas Ucraina, photoresists Giappone
+
+I profili fornitore si inseriscono in **Gestione Database → Profili Fornitore**.
+        """)
+
+    st.markdown("---")
+
+    # =========================================================================
+    # SIMULATORE WHAT-IF — SCENARI
+    # =========================================================================
+    st.header("Simulatore What-If — Scenari Disponibili")
+
+    st.markdown("""
+| Tipo | Scenari predefiniti | Logica impatto |
+|------|--------------------|----|
+| `country_block` | Taiwan ×2, China ×1 | Moltiplicatore rischio + impatto buffer |
+| `lead_time_increase` | +50%, +100% | Aumento proporzionale score lead time |
+| `material_shortage` | Neon gas, Photoresists, Terre rare, SiC | Match per materiale e paese |
+| `distributor_outage` | Arrow 4w, Avnet 6w | Penalità proporzionale gap buffer/stockout |
+| `ems_overload` | Generico 95% capacità | Aumento % score proporzionale a overload |
+
+Il simulatore calcola per ogni componente impattato:
+- Settimane di buffer rimanenti dopo la disruption
+- Score di rischio aggiustato
+- Impatto finanziario stimato (produzione persa × run rate)
+    """)
+
+    st.markdown("---")
+
+    # =========================================================================
+    # CAMPI DATABASE
+    # =========================================================================
+    st.header("Campi Database — Valori Ammessi")
+
+    st.markdown("**Part Numbers (foglio principale)**")
+    st.markdown("""
+| Campo | Valori | Impatto |
+|-------|--------|---------|
+| EOL_Status | Active, NRND, Last_Buy, EOL, Obsolete | Fattore 8 (+0→+15) |
+| Number_of_Alternative_Sources | 0, 1, 2, 3, ... | Fattore 9 |
+| Supplier_Financial_Health | A, B, C, D | Fattore 10 |
+| Allocation_Status | Normal, Constrained, Allocated | Fattore 11 |
+| Last_Price_Increase_Pct | % numerico | Fattore 12 |
+| Package_Type | QFP, BGA, WLCSP, QFN, SOP, DIP, CSP, FCBGA | Fattore 13 |
+| Technology_Node | es. 7nm, 28nm, 180nm | Fattore 14 |
+| Frontend_Country | Paese fab wafer | Fattore 1 + Hidden SPOF |
+| Backend_Country | Paese assembly/test | Fattore 1 |
+| EMS_Used | Y / N | Fattore 16 |
+| EMS_Name | Nome EMS (deve corrispondere a EMS_Providers) | Fattore 16 |
+| Automotive_Grade | None, AEC-Q100, AEC-Q101, AEC-Q200 | Moltiplicatore switching |
+    """)
+
+    st.markdown("**Fogli aggiuntivi (gestiti via UI)**")
+    st.markdown("""
+| Foglio | Campi chiave | Uso |
+|--------|-------------|-----|
+| EMS_Providers | EMS_Name, Country, Financial_Health, Capacity_Utilization_Pct, Backup_Sites_Count, Certifications | Fattore 16 completo |
+| Distributors | Name, Country, Financial_Health, Lead_Time_Markup_Weeks, Stock_Level_Weeks_Coverage | Fattore 17 |
+| Part_Distributors | Part_Number, Distributor_ID, Priority (Primary/Secondary), Allocation_Pct | Collegamento PN↔Distributore |
+| Alt_Sources | Part_Number, Supplier_Name, Frontend_Country, Qualification_Status | Fattore 18 Hidden SPOF |
+| Supplier_Profiles | Supplier_Name, Primary_Fab, Primary_Fab_Country, Key_Materials_Override (JSON) | Tier1→Tier2 linkage |
+    """)
+
+    st.markdown("---")
+
+    # =========================================================================
+    # FLUSSO DI LAVORO
+    # =========================================================================
+    st.header("Flusso di Lavoro Consigliato")
+
+    st.markdown("""
+**Setup iniziale** (una tantum per cliente):
+1. **Gestione Database → Gestione Clienti**: aggiungi il cliente e il run rate default
+2. **Gestione Database → EMS Providers**: registra i terzisti usati dai componenti
+3. **Gestione Database → Distributori**: registra Arrow, Avnet, TTI, ecc. e associali ai Part Numbers
+4. **Gestione Database → Fonti Alternative**: per ogni PN critico, inserisci le alternative con `Frontend_Country`
+5. **Gestione Database → Profili Fornitore**: per fornitori chiave (STM, NXP, Infineon...), specifica fab e materiali
+
+**Analisi ricorrente** (per ogni revisione BOM):
+1. Sidebar: seleziona il cliente
+2. **Analisi Multipla**: carica la BOM e avvia l'analisi
+3. **Dashboard Esecutiva**: verifica KPI e alert filiera
+4. **Filiera Commerciale**: analisi EMS, distributori, hidden SPOF
+5. **Simulatore What-If**: testa scenari di disruption (Taiwan, stock-out distributore, EMS overload)
+6. **Tier-2/3 Visibility**: verifica bottleneck materiali
+7. **Export**: genera report PDF per il management
+    """)
+
+    st.markdown("---")
+
+    # =========================================================================
+    # CLASSIFICAZIONE
+    # =========================================================================
+    st.subheader("Classificazione Finale")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown('<div class="risk-red"><h3>ALTO</h3><p>Score ≥ 55</p></div>', unsafe_allow_html=True)
+    with col2:
+        st.markdown('<div class="risk-yellow"><h3>MEDIO</h3><p>Score 30–54</p></div>', unsafe_allow_html=True)
+    with col3:
+        st.markdown('<div class="risk-green"><h3>BASSO</h3><p>Score &lt; 30</p></div>', unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # =========================================================================
+    # LIMITI NOTI
+    # =========================================================================
+    st.header("Limiti Noti e Roadmap")
+    st.markdown("""
+| Limite | Workaround attuale | Sviluppo futuro |
+|--------|--------------------|-----------------|
+| Nessun trend storico | Baseline statica nella Dashboard | Salvataggio analisi per data |
+| EMS score parziale senza profilo | Stima da EMS_Location (geo only) | Arricchimento automatico via API |
+| Credenziali login hardcoded | Sicure per uso interno | Integrazione LDAP/SSO |
+| PDF export non copre tab Filiera | Export da tab Analisi Multipla | Estensione pdf_export.py |
+| Nessuna integrazione dati di mercato | Inserimento manuale prezzi e allocation | Feed Octopart/SiliconExpert |
     """)
 
     st.markdown("---")
@@ -2239,10 +2728,265 @@ def render_tab_guida():
 # HELPER FUNCTIONS
 # =============================================================================
 
+def render_tab_filiera_commerciale():
+    """Tab Filiera Commerciale: EMS risk, Distributor risk, Hidden Single Source."""
+    st.header("Filiera Commerciale")
+    st.markdown(
+        "Analisi del canale distributivo e del terzista EMS — livelli nascosti della supply chain."
+    )
+
+    batch = st.session_state.batch_results
+    if not batch:
+        st.info("Esegui prima un'**Analisi Multipla** (Tab 2) per caricare i dati della BOM.")
+        return
+
+    components_data = batch['components_data']
+    components_risk = batch['components_risk']
+
+    # Precarica dati filiera
+    db = st.session_state.db
+    ems_all = db.get_all_ems_providers()
+    ems_by_name = {str(e.get('EMS_Name', '')).upper(): e for e in ems_all}
+    all_part_distributors = db.get_all_part_distributors()
+
+    # Analisi aggregate
+    ems_analysis = analyze_bom_ems_risk(components_data, ems_by_name)
+    dist_analysis = analyze_bom_distributor_risk(components_data, all_part_distributors)
+
+    tab_ems, tab_dist, tab_spof, tab_sim = st.tabs([
+        "EMS Risk", "Distributori", "Hidden Single Source", "Simulatore Stock-Out"
+    ])
+
+    # =========================================================================
+    # SUB-TAB: EMS RISK
+    # =========================================================================
+    with tab_ems:
+        st.subheader("Rischio EMS (Electronics Manufacturing Services)")
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Componenti via EMS", ems_analysis['ems_components_count'])
+        with col2:
+            st.metric("Score Medio EMS", f"{ems_analysis['avg_ems_score']:.1f}/30")
+        with col3:
+            st.metric("Componenti Critici EMS", len(ems_analysis['critical_ems']))
+
+        st.markdown("---")
+
+        # Tabella componenti con EMS
+        ems_rows = []
+        for r in ems_analysis['components_ems']:
+            if r['ems_used']:
+                ems_rows.append({
+                    'Part Number': r.get('part_number', ''),
+                    'EMS': r.get('ems_name', 'N/A'),
+                    'Paese': r.get('ems_country', 'N/A'),
+                    'Score EMS': r.get('ems_score', 0),
+                    'Livello': r.get('ems_level', 'N/A'),
+                    'Profilo': 'Sì' if r.get('has_profile') else 'Stima',
+                })
+        if ems_rows:
+            df_ems = pd.DataFrame(ems_rows).sort_values('Score EMS', ascending=False)
+            def _color_ems(row):
+                score = row['Score EMS']
+                if score >= 20:
+                    return ['background-color: #ff444433'] * len(row)
+                elif score >= 12:
+                    return ['background-color: #ffbb3333'] * len(row)
+                return [''] * len(row)
+            st.dataframe(df_ems.style.apply(_color_ems, axis=1), use_container_width=True, hide_index=True)
+        else:
+            st.info("Nessun componente usa EMS (o campo EMS_Used non impostato)")
+
+        if ems_analysis['shared_ems_risks']:
+            st.markdown("---")
+            st.subheader("EMS Condivisi (SPOF Potenziale)")
+            for shared in ems_analysis['shared_ems_risks']:
+                badge = "🔴 Single-site" if shared['is_single_site'] else f"🔵 {shared['backup_sites']} backup"
+                st.warning(
+                    f"**{shared['ems_name']}** usato da **{shared['affected_count']} componenti** {badge}: "
+                    f"{', '.join(shared['affected_pns'][:5])}"
+                )
+
+    # =========================================================================
+    # SUB-TAB: DISTRIBUTORI
+    # =========================================================================
+    with tab_dist:
+        st.subheader("Rischio Distributore")
+
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Componenti con Distributore", len([r for r in dist_analysis['components_distributor'] if r['has_distributors']]))
+        with col2:
+            st.metric("Score Medio Distributore", f"{dist_analysis['avg_distributor_score']:.1f}/25")
+        with col3:
+            st.metric("Mono-Distributore", len(dist_analysis['mono_distributor_pns']))
+        with col4:
+            st.metric("Senza Distributore", len(dist_analysis['no_distributor_pns']))
+
+        st.markdown("---")
+
+        # Tabella
+        dist_rows = []
+        for r in dist_analysis['components_distributor']:
+            dist_rows.append({
+                'Part Number': r.get('part_number', ''),
+                'Distributore Primario': r.get('primary_distributor', 'N/A'),
+                'N. Distributori': r.get('distributor_count', 0),
+                'Score': r.get('distributor_score', 0),
+                'Livello': r.get('distributor_level', 'N/A') if r.get('has_distributors') else '—',
+                'Stock Coverage (w)': r.get('stock_coverage_weeks', 0),
+                'LT Markup (w)': r.get('lead_time_markup_weeks', 0),
+            })
+        if dist_rows:
+            df_dist = pd.DataFrame(dist_rows).sort_values('Score', ascending=False)
+            def _color_dist(row):
+                score = row['Score']
+                if score >= 18:
+                    return ['background-color: #ff444433'] * len(row)
+                elif score >= 10:
+                    return ['background-color: #ffbb3333'] * len(row)
+                return [''] * len(row)
+            st.dataframe(df_dist.style.apply(_color_dist, axis=1), use_container_width=True, hide_index=True)
+
+        if dist_analysis['top_shared_distributors']:
+            st.markdown("---")
+            st.subheader("Distributori Condivisi (SPOF Potenziale)")
+            for shared in dist_analysis['top_shared_distributors']:
+                icon = "🔴 SPOF" if shared['is_spof'] else "🟡"
+                st.warning(
+                    f"{icon} **{shared['distributor']}** → {shared['affected_count']} PN: "
+                    f"{', '.join(shared['affected_pns'][:6])}"
+                )
+
+        if dist_analysis['no_distributor_pns']:
+            st.markdown("---")
+            st.info(
+                f"**{len(dist_analysis['no_distributor_pns'])} PN senza distributore registrato**: "
+                + ", ".join(dist_analysis['no_distributor_pns'][:8])
+                + (" …" if len(dist_analysis['no_distributor_pns']) > 8 else "")
+            )
+
+    # =========================================================================
+    # SUB-TAB: HIDDEN SINGLE SOURCE
+    # =========================================================================
+    with tab_spof:
+        st.subheader("Hidden Single Source Detection")
+        st.markdown("""
+        Un componente ha **hidden single source** quando tutte le sue fonti alternative
+        (inclusa la primaria) convergono sullo stesso paese di fabbricazione frontend.
+        Avere 3 fornitori tutti con fab in Taiwan non diversifica il rischio geopolitico.
+        """)
+
+        hidden_components = [
+            r for r in components_risk
+            if r.get('hidden_single_source', {}).get('hidden_spof_score', 0) >= 4
+        ]
+
+        if not hidden_components:
+            st.success(
+                "Nessun hidden single source rilevato nella BOM attuale. "
+                "Aggiungi fonti alternative nel tab Gestione Database → Fonti Alternative "
+                "per abilitare il rilevamento."
+            )
+        else:
+            st.error(f"**{len(hidden_components)} componenti con hidden single source**")
+
+            for r in hidden_components:
+                hs = r.get('hidden_single_source', {})
+                pn = r.get('part_number', 'N/A')
+                overlap_country = hs.get('overlap_country', 'N/A').title()
+                overlap_count = hs.get('overlap_count', 0)
+                total_sources = hs.get('total_sources', 0)
+                level = hs.get('level', 'N/A')
+                score = hs.get('hidden_spof_score', 0)
+
+                with st.expander(f"⚠️ {pn} — {level} (score +{score}) — {overlap_country}"):
+                    st.markdown(f"""
+                    - **Paese convergente:** {overlap_country}
+                    - **Fonti su quel paese:** {overlap_count} di {total_sources}
+                    - **Livello:** {level}
+                    - **Suggerimento:** Qualificare un fornitore alternativo con fab in paese diverso da {overlap_country}
+                    """)
+
+        st.markdown("---")
+        st.subheader("Tutte le Fonti Alternative Registrate")
+        all_alt = db.get_all_alt_sources()
+        if all_alt:
+            rows = []
+            for pn_key, sources in all_alt.items():
+                for s in sources:
+                    rows.append({'Part Number': pn_key, **{k: v for k, v in s.items() if k != 'Part_Number'}})
+            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+        else:
+            st.info(
+                "Nessuna fonte alternativa nel DB. "
+                "Aggiungile in Gestione Database → Fonti Alternative per attivare il rilevamento."
+            )
+
+    # =========================================================================
+    # SUB-TAB: SIMULATORE STOCK-OUT DISTRIBUTORE
+    # =========================================================================
+    with tab_sim:
+        st.subheader("Simulatore Stock-Out Distributore")
+        st.markdown(
+            "Simula l'impatto di uno stock-out su un distributore specifico: "
+            "quali componenti restano scoperti e per quante settimane."
+        )
+
+        # Ottieni lista distributori dalla BOM corrente
+        active_distributors = set()
+        for r in dist_analysis['components_distributor']:
+            if r.get('has_distributors') and r.get('primary_distributor') != 'N/A':
+                active_distributors.add(r['primary_distributor'])
+
+        if not active_distributors:
+            st.info("Nessun distributore associato alla BOM. Aggiungi distribuzioni in Gestione Database → Distributori.")
+            return
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            target_dist = st.selectbox("Distributore da simulare", sorted(active_distributors))
+        with col2:
+            stockout_weeks = st.slider("Settimane di stock-out", 1, 26, 4)
+        with col3:
+            sim_run_rate = st.number_input(
+                "Run Rate (PCB/sett.)", min_value=1, value=st.session_state.run_rate
+            )
+
+        if st.button("Esegui Simulazione", type="primary"):
+            sim_result = simulate_distributor_stockout(
+                components_data, all_part_distributors,
+                target_dist, stockout_weeks, sim_run_rate
+            )
+
+            summary = sim_result['summary']
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Componenti Impattati", summary['total_affected'])
+            with col2:
+                st.metric("Componenti Critici", summary['total_critical'], help="Buffer esaurito prima della fine dello stock-out")
+            with col3:
+                st.metric("Settimane Perse (media)", f"{summary['avg_weeks_lost']:.1f}")
+
+            if sim_result['affected_components']:
+                affected_df = pd.DataFrame(sim_result['affected_components'])
+                def _color_critical(row):
+                    if row['is_critical']:
+                        return ['background-color: #ff444433'] * len(row)
+                    return [''] * len(row)
+                st.dataframe(
+                    affected_df.style.apply(_color_critical, axis=1),
+                    use_container_width=True, hide_index=True
+                )
+            else:
+                st.success(f"Nessun componente impattato da uno stock-out di {target_dist}")
+
+
 def _run_batch_analysis(pns: List[str], client_id, run_rate):
-    """Esegue analisi batch e restituisce risultati strutturati."""
+    """Esegue analisi batch e restituisce risultati strutturati. v4.0: include EMS, distributori, alt sources."""
     from risk_engine import calculate_bom_risk_v3
-    
+
     results = st.session_state.db.lookup_batch(pns, client_id)
     found_components = {pn: data for pn, data in results.items() if data is not None}
     not_found = [pn for pn, data in results.items() if data is None]
@@ -2250,14 +2994,49 @@ def _run_batch_analysis(pns: List[str], client_id, run_rate):
     if not found_components:
         return None
 
+    # v4.0 - Carica dati filiera commerciale dal DB
+    db = st.session_state.db
+
+    # EMS providers indicizzati per nome (uppercase)
+    ems_all = db.get_all_ems_providers()
+    ems_by_name = {str(e.get('EMS_Name', '')).upper(): e for e in ems_all}
+
+    # Distributori associati per PN
+    all_part_distributors = db.get_all_part_distributors()
+
+    # Fonti alternative per PN
+    all_alt_sources = db.get_all_alt_sources()
+
+    # Profili fornitore per nome (uppercase)
+    supplier_profiles_all = db.get_all_supplier_profiles()
+    supplier_profiles_by_name = {str(s.get('Supplier_Name', '')).upper(): s for s in supplier_profiles_all}
+
     # Calcola rischi individuali
     components_data = []
     components_risk = []
     for pn, data in found_components.items():
-        risk = calculate_component_risk(data, run_rate)
+        pn_upper = pn.upper()
+
+        # Recupera dati filiera per questo PN
+        ems_name = str(data.get('EMS_Name', '') or '').upper()
+        ems_profile = ems_by_name.get(ems_name) if ems_name else None
+
+        dist_list = all_part_distributors.get(pn_upper, [])
+        alt_sources = all_alt_sources.get(pn_upper, [])
+
+        supplier_name = str(data.get('Supplier Name', '') or '').upper()
+        supplier_profile = supplier_profiles_by_name.get(supplier_name)
+
+        risk = calculate_component_risk(
+            data, run_rate,
+            ems_provider_data=ems_profile,
+            distributor_list=dist_list,
+            alt_sources=alt_sources,
+        )
         risk['part_number'] = pn
         risk['supplier'] = data.get('Supplier Name', 'N/A')
         risk['category'] = data.get('Category of product (MCU, MPU, Sensor, Analogic, Power, Passive Component, Transceiver Wireless)', 'N/A')
+        risk['supplier_profile'] = supplier_profile  # Per tier2 con profilo fornitore
         components_risk.append(risk)
         data['Part Number'] = pn
         components_data.append(data)

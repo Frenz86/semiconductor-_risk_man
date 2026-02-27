@@ -24,6 +24,8 @@ from dependency_graph import (
     find_single_points_of_failure, render_dependency_tree
 )
 from tier2_visibility import calculate_tier2_risk
+from ems_risk import calculate_ems_risk
+from distributor_risk import calculate_distributor_risk
 
 
 # =============================================================================
@@ -78,16 +80,97 @@ def _get_safe_value(row: Dict[str, Any], key: str, default: Any = None) -> Any:
 # MOTORE DI CALCOLO DEL RISCHIO v3.0
 # =============================================================================
 
-def calculate_component_risk(row: Dict[str, Any], run_rate: int) -> Dict[str, Any]:
+def _calculate_hidden_single_source(
+    row: Dict[str, Any],
+    alt_sources: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """
+    Rileva se le fonti alternative convergono sullo stesso paese frontend
+    (hidden single source: diverse aziende, stessa fab).
+
+    Args:
+        row: Dati componente primario
+        alt_sources: Lista fonti alternative da Alt_Sources sheet
+
+    Returns:
+        {
+            'has_hidden_spof': bool,
+            'converging_country': str,
+            'overlap_count': int,
+            'score': int (0-12),
+            'factors': List[str],
+        }
+    """
+    if not alt_sources or not isinstance(alt_sources, list):
+        return {'has_hidden_spof': False, 'hidden_spof_score': 0, 'overlap_country': '', 'overlap_count': 0, 'total_sources': 0, 'level': 'BASSO', 'factors': []}
+
+    primary_frontend = str(_get_safe_value(row, 'Frontend_Country', '') or '').lower().strip()
+    if not primary_frontend:
+        return {'has_hidden_spof': False, 'hidden_spof_score': 0, 'overlap_country': '', 'overlap_count': 0, 'total_sources': 0, 'level': 'BASSO', 'factors': []}
+
+    # Conta quante fonti alternative hanno lo stesso frontend country
+    overlap_count = 0
+    for alt in alt_sources:
+        alt_frontend = str(alt.get('Frontend_Country', '') or '').lower().strip()
+        if alt_frontend and alt_frontend == primary_frontend:
+            overlap_count += 1
+
+    total_alts = len(alt_sources)
+    if overlap_count == 0:
+        return {'has_hidden_spof': False, 'hidden_spof_score': 0, 'overlap_country': primary_frontend, 'overlap_count': 0, 'total_sources': total_alts, 'level': 'BASSO', 'factors': []}
+
+    # Se tutte (o quasi) le alternative usano lo stesso paese frontend -> hidden SPOF
+    overlap_ratio = overlap_count / total_alts if total_alts > 0 else 0
+
+    if overlap_ratio >= 1.0:
+        score = 12
+        level_label = 'CRITICO'
+        label = f"CRITICO: Multi-sourcing illusorio — tutti i {total_alts + 1} fornitori dipendono da {primary_frontend.title()} (hidden single source)"
+        has_hidden = True
+    elif overlap_ratio >= 0.67:
+        score = 7
+        level_label = 'ALTO'
+        label = f"ALTO: {overlap_count}/{total_alts} fonti alternative in {primary_frontend.title()} — rischio hidden single source"
+        has_hidden = True
+    elif overlap_ratio >= 0.5:
+        score = 4
+        level_label = 'MEDIO'
+        label = f"MEDIO: {overlap_count}/{total_alts} fonti alternative in {primary_frontend.title()}"
+        has_hidden = False
+    else:
+        return {'has_hidden_spof': False, 'hidden_spof_score': 0, 'overlap_country': primary_frontend, 'overlap_count': overlap_count, 'total_sources': total_alts, 'level': 'BASSO', 'factors': []}
+
+    return {
+        'has_hidden_spof': has_hidden,
+        'hidden_spof_score': score,
+        'overlap_country': primary_frontend,
+        'overlap_count': overlap_count,
+        'total_sources': total_alts,
+        'overlap_ratio': round(overlap_ratio, 2),
+        'level': level_label,
+        'factors': [f"🔍 {label}"],
+    }
+
+
+def calculate_component_risk(
+    row: Dict[str, Any],
+    run_rate: int,
+    ems_provider_data: Optional[Dict[str, Any]] = None,
+    distributor_list: Optional[List[Dict[str, Any]]] = None,
+    alt_sources: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     """
     Calcola il rischio per un singolo componente.
 
-    v3.0: Include geo risk frontend/backend, technology node risk,
-    e switching cost nel risultato.
+    v4.0: Aggiunge EMS risk scoring, distributor risk, hidden single source,
+    oltre a geo risk frontend/backend, technology node risk, switching cost.
 
     Args:
         row: Dizionario con i dati del componente
         run_rate: Tasso di produzione (PCB/settimana)
+        ems_provider_data: Profilo EMS dal DB (opzionale)
+        distributor_list: Lista distributori associati al PN (opzionale)
+        alt_sources: Lista fonti alternative dal DB (opzionale)
 
     Returns:
         Dizionario con:
@@ -100,6 +183,9 @@ def calculate_component_risk(row: Dict[str, Any], run_rate: int) -> Dict[str, An
             - geo_risk: Dettaglio rischio geografico frontend/backend
             - tech_node_risk: Dettaglio rischio technology node
             - switching_cost: Dettaglio costo di switching
+            - ems_risk: Dettaglio rischio EMS (v4.0)
+            - distributor_risk: Dettaglio rischio distributore (v4.0)
+            - hidden_single_source: Dettaglio hidden SPOF (v4.0)
     """
     score = 0
     factors = []
@@ -321,10 +407,10 @@ def calculate_component_risk(row: Dict[str, Any], run_rate: int) -> Dict[str, An
     # =====================================================================
     # 9. RISCHIO ALTERNATIVE SOURCES (fino a +10 / bonus -3)
     # =====================================================================
-    alt_sources = _get_safe_value(row, 'Number_of_Alternative_Sources', '')
-    if alt_sources is not None and str(alt_sources).strip() != '':
+    alt_sources_raw = _get_safe_value(row, 'Number_of_Alternative_Sources', '')
+    if alt_sources_raw is not None and str(alt_sources_raw).strip() != '':
         try:
-            alt_sources_n = int(float(alt_sources))
+            alt_sources_n = int(float(alt_sources_raw))
             if alt_sources_n == 0:
                 score += 10
                 factors.append("🚫 CRITICO: Nessuna fonte alternativa sul mercato (sole source)")
@@ -443,6 +529,51 @@ def calculate_component_risk(row: Dict[str, Any], run_rate: int) -> Dict[str, An
         else:
             factors.append(f"🔗 MEDIO: Dipendenza moderata materiali Tier-2/3")
 
+    # =====================================================================
+    # 16. RISCHIO EMS (fino a +12) - v4.0
+    # =====================================================================
+    ems_result = calculate_ems_risk(row, ems_provider_data)
+    ems_contribution = ems_result.get('ems_score', 0)
+    if ems_result.get('ems_used') and ems_contribution > 0:
+        ems_contribution = min(12, ems_contribution)
+        score += ems_contribution
+        factors.extend(ems_result.get('factors', []))
+        suggestions.extend(ems_result.get('suggestions', []))
+        if ems_contribution >= 8:
+            man_hours += 16
+
+    # =====================================================================
+    # 17. RISCHIO DISTRIBUTORE (fino a +10) - v4.0
+    # =====================================================================
+    dist_result = calculate_distributor_risk(
+        row,
+        distributor_list or [],
+        lead_time_weeks=lead_time if isinstance(lead_time, int) else None
+    )
+    dist_contribution = dist_result.get('distributor_score', 0)
+    if dist_contribution > 0:
+        dist_contribution = min(10, dist_contribution)
+        score += dist_contribution
+        factors.extend(dist_result.get('factors', []))
+        suggestions.extend(dist_result.get('suggestions', []))
+        if dist_contribution >= 8:
+            man_hours += 8
+
+    # =====================================================================
+    # 18. HIDDEN SINGLE SOURCE (fino a +12) - v4.0
+    # =====================================================================
+    hidden_spof = _calculate_hidden_single_source(row, alt_sources or [])
+    hidden_contribution = hidden_spof.get('score', 0)
+    if hidden_contribution > 0:
+        score += hidden_contribution
+        factors.extend(hidden_spof.get('factors', []))
+        if hidden_spof.get('has_hidden_spof'):
+            suggestions.append(
+                f"Qualificare fornitori alternativi con fab in paesi diversi da "
+                f"{hidden_spof.get('converging_country', 'N/A').title()}"
+            )
+            man_hours += 40
+
     # Cap score a 100
     score = min(100, score)
 
@@ -471,6 +602,10 @@ def calculate_component_risk(row: Dict[str, Any], run_rate: int) -> Dict[str, An
         'buffer_coverage_weeks': round(buffer_coverage_weeks, 1),
         # v3.2 - Tier-2/3
         'tier2_risk': tier2_result,
+        # v4.0 - Filiera commerciale
+        'ems_risk': ems_result,
+        'distributor_risk': dist_result,
+        'hidden_single_source': hidden_spof,
     }
 
 

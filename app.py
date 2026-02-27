@@ -33,7 +33,8 @@ from tabs_modules import (
     render_tab_gestione_database,
     render_tab_simulatore_whatif,
     render_tab_dashboard_esecutiva,
-    render_tab_guida
+    render_tab_guida,
+    render_tab_filiera_commerciale,
 )
 
 # =============================================================================
@@ -382,7 +383,7 @@ st.markdown("**Analisi deterministica del rischio con dipendenze, geo-risk front
 # TABS
 # =============================================================================
 
-tab9, tab2, tab3, tab4, tab5, tab_t2, tab6, tab7, tab8  = st.tabs([
+tab9, tab2, tab3, tab4, tab5, tab_t2, tab6, tab_filiera, tab7, tab8 = st.tabs([
     "Guida",
     "Analisi Multipla",
     "Dashboard",
@@ -390,6 +391,7 @@ tab9, tab2, tab3, tab4, tab5, tab_t2, tab6, tab7, tab8  = st.tabs([
     "Mappa Geopolitica",
     "Tier-2/3 Visibility",
     "Costi di Switching",
+    "Filiera Commerciale",
     "Simulatore What-If",
     "Gestione Database",
 ])
@@ -422,6 +424,9 @@ with tab_t2:
 
 with tab6:
     render_tab_costi_switching()
+
+with tab_filiera:
+    render_tab_filiera_commerciale()
 
 with tab7:
     render_tab_simulatore_whatif()

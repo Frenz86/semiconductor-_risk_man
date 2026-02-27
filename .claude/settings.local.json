@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -l \"c:\\\\Users\\\\danie\\\\Desktop\\\\semiconductor_risk_man\"/*.py)",
+      "Bash(ls -lh \"c:\\\\Users\\\\danie\\\\Desktop\\\\semiconductor_risk_man\"/*.py \"c:\\\\Users\\\\danie\\\\Desktop\\\\semiconductor_risk_man\"/*.xlsx)",
+      "Read(//c/Users/danie/Desktop/semiconductor_risk_man/**)",
+      "Bash(find \"c:\\\\Users\\\\danie\\\\Desktop\\\\semiconductor_risk_man\" -name \"*.py\" -type f -exec grep -l \"Tier1\\\\|Tier 1\\\\|Tier2\\\\|Tier 2\\\\|Tier3\\\\|Tier 3\\\\|fornitore\\\\|supplier\" {} ;)",
+      "Bash(grep -n \"class PartNumberDatabase\\\\|st.session_state.db\" *.py)",
+      "Bash(python -c \":*)",
+      "Bash(powershell -Command \"echo $PROFILE\")",
+      "Bash(powershell -Command \"Write-Output $PROFILE\")",
+      "Bash(powershell -NoProfile -Command \"[System.Environment]::GetEnvironmentVariable\\(''USERPROFILE''\\)\")",
+      "Bash(powershell -NoProfile -Command \":*)",
+      "Bash(python -c \"from risk_engine import calculate_component_risk, _calculate_hidden_single_source; print\\(''Import OK''\\); r = _calculate_hidden_single_source\\({}, []\\); print\\(''Empty list:'', r\\); r2 = _calculate_hidden_single_source\\({}, 3\\); print\\(''Int input:'', r2\\)\")"
+    ]
+  }
+}

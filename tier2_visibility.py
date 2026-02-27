@@ -319,16 +319,90 @@ def _get_materials_for_component(category: str, tech_node: str) -> List[str]:
 # CALCOLO RISCHIO TIER-2/3 PER SINGOLO COMPONENTE
 # =============================================================================
 
+def _apply_supplier_profile_overrides(
+    material_keys: List[str],
+    supplier_profile: Optional[Dict[str, Any]]
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Applica gli override materiali da Supplier_Profiles per un fornitore specifico.
+
+    Il campo Key_Materials_Override contiene JSON del tipo:
+    {"neon_gas": {"dominant_country": "korea", "concentration_risk": 0.30},
+     "silicon_wafers": {"dominant_country": "japan", "concentration_risk": 0.60}}
+
+    Returns:
+        Dict {material_key: {dominant_country, concentration_risk}} con overrides
+    """
+    if not supplier_profile:
+        return {}
+
+    overrides_raw = _get_safe(supplier_profile, 'Key_Materials_Override', '')
+    if not overrides_raw or (isinstance(overrides_raw, float) and pd.isna(overrides_raw)):
+        return {}
+
+    try:
+        import json
+        if isinstance(overrides_raw, str):
+            return json.loads(overrides_raw)
+        elif isinstance(overrides_raw, dict):
+            return overrides_raw
+    except (json.JSONDecodeError, TypeError, ValueError):
+        pass
+
+    return {}
+
+
+def _get_supplier_specific_materials(
+    category: str,
+    tech_node: str,
+    supplier_profile: Optional[Dict[str, Any]]
+) -> List[str]:
+    """
+    Restituisce i materiali per un componente, considerando prima il profilo
+    fornitore specifico (se disponibile), poi il default categoria+tech_node.
+
+    Priorità:
+    1. Profilo fornitore (Primary_Fab_Country → influenza materiali)
+    2. Default categoria+tech_node
+    """
+    # Default sempre come base
+    default_materials = _get_materials_for_component(category, tech_node)
+
+    if not supplier_profile:
+        return default_materials
+
+    # Se il fornitore ha un profilo con fab specifico, possiamo aggiungere/
+    # modificare materiali (es. wafer source specifico)
+    primary_fab_country = str(_get_safe(supplier_profile, 'Primary_Fab_Country', '') or '').lower().strip()
+    wafer_source = str(_get_safe(supplier_profile, 'Wafer_Source', '') or '').strip()
+
+    # Se c'è un wafer source specifico, assicurati che silicon_wafers sia incluso
+    if wafer_source and 'silicon_wafers' not in default_materials:
+        default_materials = ['silicon_wafers'] + default_materials
+
+    return default_materials
+
+
 def calculate_tier2_risk(
     component_data: Dict[str, Any],
-    custom_tier2_data: Optional[List[Dict[str, Any]]] = None
+    custom_tier2_data: Optional[List[Dict[str, Any]]] = None,
+    supplier_profile: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Calcola il rischio Tier-2/3 per un singolo componente.
 
+    v4.0: Supporta supplier_profile per materiali specifici del fornitore
+    invece dei default basati su categoria+tech_node.
+
+    Priorità materiali:
+    1. Custom override da Component_Materials (massima priorità)
+    2. Supplier profile specifico (Key_Materials_Override)
+    3. Default categoria+tech_node (fallback)
+
     Args:
         component_data: Dizionario dal lookup (stessa struttura di risk_engine)
         custom_tier2_data: Lista opzionale di record custom da Component_Materials
+        supplier_profile: Profilo fornitore da Supplier_Profiles (opzionale)
 
     Returns:
         {
@@ -337,6 +411,7 @@ def calculate_tier2_risk(
             'bottlenecks': List[Dict],
             'concentration_risks': Dict,
             'custom_overrides_applied': bool,
+            'supplier_profile_applied': bool,
             'suggestions': List[str],
             'factors': List[str],
         }
@@ -345,8 +420,12 @@ def calculate_tier2_risk(
     tech_node = _get_safe(component_data, 'Technology_Node', '')
     frontend_country = _get_safe(component_data, 'Frontend_Country', '').lower()
 
-    # Ottieni materiali richiesti
-    material_keys = _get_materials_for_component(category, tech_node)
+    # Ottieni materiali richiesti: usa supplier profile se disponibile
+    material_keys = _get_supplier_specific_materials(category, tech_node, supplier_profile)
+
+    # Ottieni override materiali specifici dal profilo fornitore
+    supplier_mat_overrides = _apply_supplier_profile_overrides(material_keys, supplier_profile)
+    supplier_profile_applied = bool(supplier_mat_overrides)
 
     # Se ci sono dati custom, integra/sovrascrivi
     custom_overrides = {}
@@ -371,7 +450,10 @@ def calculate_tier2_risk(
         if not mat_data:
             continue
 
-        # Applica override custom se presente
+        # Priorità override:
+        # 1. Custom override da Component_Materials (massima priorità)
+        # 2. Supplier profile override (Tier1→Tier2 linkage)
+        # 3. Default dal database materiali
         if mat_key in custom_overrides:
             custom = custom_overrides[mat_key]
             custom_conc = custom.get('Custom_Concentration')
@@ -381,6 +463,11 @@ def calculate_tier2_risk(
             else:
                 effective_concentration = mat_data['concentration_risk']
             dominant_country = custom_country if custom_country else _get_dominant_country(mat_data)
+        elif mat_key in supplier_mat_overrides:
+            # Override dal profilo fornitore specifico
+            sup_override = supplier_mat_overrides[mat_key]
+            effective_concentration = float(sup_override.get('concentration_risk', mat_data['concentration_risk']))
+            dominant_country = sup_override.get('dominant_country', _get_dominant_country(mat_data))
         else:
             effective_concentration = mat_data['concentration_risk']
             dominant_country = _get_dominant_country(mat_data)
@@ -503,6 +590,7 @@ def calculate_tier2_risk(
         'bottlenecks': sorted(bottlenecks, key=lambda x: x['concentration'], reverse=True),
         'concentration_risks': concentration_risks,
         'custom_overrides_applied': bool(custom_overrides),
+        'supplier_profile_applied': supplier_profile_applied,
         'suggestions': suggestions,
         'factors': factors,
         'node_bucket': node_bucket,

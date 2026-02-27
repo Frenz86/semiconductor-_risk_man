@@ -29,6 +29,8 @@ SCENARIO_TYPES = {
     'lead_time_increase': 'Aumento Lead Time',
     'demand_surge': 'Picco Domanda',
     'material_shortage': 'Carenza Materiale Tier-2',
+    'distributor_outage': 'Stock-Out Distributore',
+    'ems_overload': 'Overload EMS',
 }
 
 # Paesi a alto rischio con durate consigliate per blocco
@@ -141,6 +143,35 @@ def _is_component_affected(component: Dict[str, Any], scenario: Dict[str, Any]) 
                     if share >= 0.10:
                         return True
             return False
+
+    elif scenario_type == 'distributor_outage':
+        # Il componente è affetto se il suo distributore primario/secondario
+        # corrisponde al distributore target.
+        target_dist = str(_get_safe(scenario.get('distributor', ''))).lower().strip()
+        if not target_dist:
+            return False
+        # Cerca il distributore nei dati del componente (nome del distributore
+        # passato dal batch_results tramite risk['distributor_risk'])
+        dist_risk = component.get('_distributor_risk', {})
+        primary = str(_get_safe(dist_risk.get('primary_distributor', ''))).lower()
+        if target_dist in primary:
+            return True
+        # Fallback: cerca tra i campi del componente se c'è un campo Distributor
+        dist_field = str(_get_safe(component.get('Primary_Distributor', '')
+                                   or component.get('Distributor', ''))).lower()
+        return target_dist in dist_field
+
+    elif scenario_type == 'ems_overload':
+        # Il componente è affetto se usa EMS e l'EMS corrisponde al target (o
+        # tutti gli EMS se nessun target specificato).
+        ems_used = str(_get_safe(component.get('EMS_Used', 'N'))).strip().upper()
+        if ems_used != 'Y':
+            return False
+        target_ems = str(_get_safe(scenario.get('ems', ''))).lower().strip()
+        if not target_ems:
+            return True  # Scenario generico: tutti i componenti via EMS
+        ems_name = str(_get_safe(component.get('EMS_Name', ''))).lower()
+        return target_ems in ems_name
 
     return False
 
@@ -264,6 +295,27 @@ def calculate_adjusted_risk_score(
         new_lead_score = original_lead_score * lead_factor
 
         adjusted = original_score - original_lead_score + new_lead_score
+
+    elif scenario_type == 'distributor_outage':
+        # Stock-out distributore: penalità proporzionale alla dipendenza mono-dist
+        # e alla durata rispetto al buffer
+        weeks = scenario.get('weeks', 4)
+        # Se il buffer non copre l'outage → penalità significativa
+        buffer_gap = max(0, weeks - new_buffer_weeks)
+        dist_penalty = min(20, buffer_gap * 2.5)
+        adjusted = min(100, original_score + dist_penalty)
+
+    elif scenario_type == 'ems_overload':
+        # EMS al limite della capacità: rischio aumenta proporzionalmente
+        # all'utilizzo indicato nello scenario (default 95%)
+        overload_pct = float(_get_safe(scenario.get('capacity_pct', 95), 95))
+        if overload_pct >= 95:
+            risk_increase = original_score * 0.30
+        elif overload_pct >= 85:
+            risk_increase = original_score * 0.15
+        else:
+            risk_increase = original_score * 0.05
+        adjusted = min(100, original_score + risk_increase)
 
     else:  # supplier_outage, demand_surge, altri
         adjusted = original_score
@@ -522,6 +574,31 @@ def get_predefined_scenarios() -> List[Dict[str, Any]]:
             'weeks': 6,
             'description': 'Carenza substrati SiC (Wolfspeed capacity shortage)',
             'risk_multiplier': 1.8,
+        },
+        {
+            'name': 'Stock-Out Arrow Electronics (4 settimane)',
+            'type': 'distributor_outage',
+            'distributor': 'Arrow',
+            'weeks': 4,
+            'description': 'Stock-out Arrow Electronics: componenti non disponibili per 4 settimane',
+            'risk_multiplier': 1.5,
+        },
+        {
+            'name': 'Stock-Out Avnet (6 settimane)',
+            'type': 'distributor_outage',
+            'distributor': 'Avnet',
+            'weeks': 6,
+            'description': 'Stock-out Avnet: componenti non disponibili per 6 settimane',
+            'risk_multiplier': 1.6,
+        },
+        {
+            'name': 'EMS Overload Generico (capacità 95%)',
+            'type': 'ems_overload',
+            'ems': '',
+            'capacity_pct': 95,
+            'weeks': 8,
+            'description': 'Tutti gli EMS al limite capacità (95%): rischi ritardi produzione',
+            'risk_multiplier': 1.3,
         },
     ]
 
