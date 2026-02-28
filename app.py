@@ -1,29 +1,20 @@
 """
-Supply Chain Risk Assessment Tool v3.0 - Resilience Platform
-=============================================================
-Piattaforma per la valutazione proattiva del rischio e della resilienza
-della supply chain elettronica.
-
-Novità v3.0:
-- Albero Dipendenze con grafo interattivo e chain risk propagation
-- Mappa Geopolitica con rischio frontend/backend
-- Costi di Switching con classificazione TRIVIALE/MODERATO/COMPLESSO/CRITICO
-- Technology Node risk assessment
-- Buffer stock con riduzione proporzionale del rischio
+Supply Chain Risk Assessment Tool v4.0 - Resilience Platform
 
 Per eseguire:
 1. pip install -r requirements.txt
 2. streamlit run app.py
 """
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent / 'src'))
+
 import streamlit as st
-import streamlit.components.v1 as components
-import hashlib
-from risk_engine import calculate_component_risk, calculate_bom_risk, calculate_bom_risk_v3
 from pn_lookup import PartNumberDatabase
 
 # Import moduli UI
-from tabs_modules import (
+from tabs import (
     render_tab_analisi_rapida,
     render_tab_analisi_multipla,
     render_tab_albero_dipendenze,
@@ -91,10 +82,6 @@ USERS = {
     "guest": "guest"
 }
 
-
-def hash_password(password):
-    """Hash della password usando SHA256."""
-    return hashlib.sha256(password.encode()).hexdigest()
 
 
 def check_login(username, password):
@@ -184,9 +171,6 @@ def init_session_state():
         client = st.session_state.db.get_client(st.session_state.current_client) if st.session_state.current_client else None
         st.session_state.run_rate = client['Default_Run_Rate'] if client else 5000
 
-    if 'analysis_results' not in st.session_state:
-        st.session_state.analysis_results = []
-
     if 'batch_results' not in st.session_state:
         st.session_state.batch_results = None
 
@@ -201,110 +185,6 @@ def get_client_run_rate(client_id):
     client = st.session_state.db.get_client(client_id)
     return client['Default_Run_Rate'] if client else 5000
 
-
-def render_risk_badge(risk_level, score):
-    """Renderizza un badge del rischio."""
-    color_map = {
-        'ALTO': 'risk-red',
-        'MEDIO': 'risk-yellow',
-        'BASSO': 'risk-green'
-    }
-    css_class = color_map.get(risk_level, 'risk-green')
-    st.markdown(f"""
-    <div class="{css_class}">
-        <h3>{risk_level}</h3>
-        <p>Score: {score}/100</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-
-def render_switching_badge(classification):
-    """Renderizza un badge per la classificazione di switching."""
-    css_class = f"switching-{classification.lower()}"
-    st.markdown(f'<span class="{css_class}">{classification}</span>', unsafe_allow_html=True)
-
-
-def render_geo_detail(geo_risk):
-    """Renderizza i dettagli del rischio geografico frontend/backend."""
-    frontend = geo_risk.get('frontend_country', 'N/A').title()
-    backend = geo_risk.get('backend_country', 'N/A').title()
-    f_level = geo_risk.get('frontend_level', 'N/A')
-    b_level = geo_risk.get('backend_level', 'N/A')
-
-    st.markdown(f"""
-    <div class="geo-frontend">
-        <strong>Frontend (Wafer Fab):</strong> {frontend} - {f_level}<br/>
-        <small>{geo_risk.get('frontend_reason', '')}</small>
-    </div>
-    <div class="geo-backend">
-        <strong>Backend (Assembly/Test):</strong> {backend} - {b_level}<br/>
-        <small>{geo_risk.get('backend_reason', '')}</small>
-    </div>
-    """, unsafe_allow_html=True)
-
-
-def _is_component_affected(component: dict, scenario: dict) -> bool:
-    """Verifica se un componente è affetto dallo scenario."""
-    from whatif_simulator import _is_component_affected as _check_affected
-    return _check_affected(component, scenario)
-
-
-def render_mermaid(mermaid_code, height=600):
-    """Renderizza un diagramma Mermaid in Streamlit."""
-    components.html(f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
-        <style>
-            body {{ margin: 0; padding: 20px; font-family: Arial, sans-serif; background: white; }}
-            .mermaid {{ background: white; padding: 20px; }}
-        </style>
-    </head>
-    <body>
-        <div class="mermaid" style="background: white;">
-{mermaid_code}
-        </div>
-        <script>
-            mermaid.initialize({{ startOnLoad: true, theme: 'default', securityLevel: 'loose' }});
-        </script>
-    </body>
-    </html>
-    """, height=height, scrolling=True)
-
-
-def run_batch_analysis(pns, client_id, run_rate):
-    """Esegue analisi batch e restituisce risultati strutturati."""
-    results = st.session_state.db.lookup_batch(pns, client_id)
-    found_components = {pn: data for pn, data in results.items() if data is not None}
-    not_found = [pn for pn, data in results.items() if data is None]
-
-    if not found_components:
-        return None
-
-    # Calcola rischi individuali
-    components_data = []
-    components_risk = []
-    for pn, data in found_components.items():
-        risk = calculate_component_risk(data, run_rate)
-        risk['part_number'] = pn
-        risk['supplier'] = data.get('Supplier Name', 'N/A')
-        risk['category'] = data.get('Category of product (MCU, MPU, Sensor, Analogic, Power, Passive Component, Transceiver Wireless)', 'N/A')
-        components_risk.append(risk)
-        data['Part Number'] = pn
-        components_data.append(data)
-
-    # Calcola BOM risk v3 (con dependency graph)
-    bom_risk_v3 = calculate_bom_risk_v3(components_data, components_risk)
-
-    return {
-        'components_data': components_data,
-        'components_risk': components_risk,
-        'bom_risk': bom_risk_v3,
-        'found_count': len(found_components),
-        'total_count': len(pns),
-        'not_found': not_found,
-    }
 
 
 # =============================================================================
@@ -400,8 +280,6 @@ tab9, tab2, tab3, tab4, tab5, tab_t2, tab6, tab_filiera, tab7, tab8 = st.tabs([
 # RENDER TAB FUNCTIONS
 # =============================================================================
 
-# with tab2:
-#     render_tab_analisi_rapida()
 with tab9:
     render_tab_guida()
 
@@ -433,10 +311,3 @@ with tab7:
 
 with tab8:
     render_tab_gestione_database()
-
-
-
-# =============================================================================
-# FOOTER
-# =============================================================================
-

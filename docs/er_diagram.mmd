@@ -1,0 +1,178 @@
+erDiagram
+
+    %% =========================================================
+    %% INPUT: BOM FILE (slim - 3 colonne utili)
+    %% 01/02/03_BOM_*.xlsx  →  foglio INPUTS
+    %% Riga header contiene anche: Run_Rate (metadato)
+    %% =========================================================
+
+    BOM_FILE {
+        string  Supplier_Part_Number   PK
+        int     Qty_in_BOM
+        int     Buffer_Stock_Units
+    }
+
+    %% =========================================================
+    %% DATABASE: part_numbers_db.xlsx
+    %% =========================================================
+
+    Part_Numbers {
+        string  Part_Number             PK
+        string  Supplier_Name
+        string  Category
+        string  Frontend_Country
+        string  Backend_Country
+        string  Technology_Node
+        string  Plant_1_Name
+        string  Plant_2_Name
+        string  Plant_3_Name
+        string  Plant_4_Name
+        string  EMS_Name                FK
+        string  EMS_Location
+        int     Lead_Time_weeks
+        string  EOL_Status
+        int     Number_of_Alt_Sources
+        string  Financial_Health
+        string  Allocation_Status
+        string  Automotive_Grade
+        string  Package_Type
+        string  Proprietary
+        string  Commodity
+        string  Stand_Alone
+        int     Weeks_to_qualify
+        string  Certifications
+        float   Unit_Price
+        int     MTBF_Hours
+        int     Last_Price_Increase_Pct
+        string  SW_Code_Size_KB
+        string  Memory_Type
+        string  OS_Type
+        string  Wireless_Protocol
+        string  Functional_Dependencies
+        string  Created_at
+        string  Updated_at
+    }
+
+    Client_Data {
+        string  Client_ID               FK
+        string  Part_Number             FK
+        int     Qty_in_BOM
+        int     Buffer_Stock_Units
+        int     Custom_Lead_Time_weeks
+        string  Notes
+    }
+
+    Clients {
+        string  Client_ID               PK
+        string  Client_Name
+        int     Default_Run_Rate
+        string  Created_at
+    }
+
+    EMS_Providers {
+        string  EMS_ID                  PK
+        string  EMS_Name
+        string  Country
+        string  Financial_Health
+        int     Capacity_Utilization_Pct
+        string  Certifications
+        int     Backup_Sites_Count
+        int     Years_Business
+        string  Notes
+    }
+
+    Distributors {
+        string  Distributor_ID          PK
+        string  Name
+        string  Country
+        string  Financial_Health
+        int     Lead_Time_Markup_Weeks
+        int     Stock_Level_Weeks_Coverage
+        string  Certifications
+        int     Backup_Count
+        string  Notes
+    }
+
+    Part_Distributors {
+        string  Part_Number             FK
+        string  Distributor_ID         FK
+        string  Priority
+        int     Allocation_Pct
+        string  Created_at
+    }
+
+    Alt_Sources {
+        string  Part_Number             FK
+        string  Supplier_Name
+        string  Frontend_Country
+        string  Backend_Country
+        int     Lead_Time_Weeks
+        string  Financial_Health
+        string  Qualification_Status
+        int     Allocation_Pct
+        string  Notes
+    }
+
+    Tier2_Suppliers {
+        string  Tier2_Supplier_ID       PK
+        string  Tier2_Supplier_Name
+        string  Material_Type
+        string  Material_Key
+        string  Country
+        int     Market_Share_Pct
+        string  Criticality
+        string  Substitutability
+        string  Notes
+    }
+
+    Component_Materials {
+        string  Part_Number             FK
+        string  Material_Key
+        string  Material_Name
+        string  Tier2_Supplier_ID      FK
+        float   Custom_Concentration
+        string  Custom_Country
+        string  Notes
+    }
+
+    Supplier_Profiles {
+        string  Supplier_ID             PK
+        string  Supplier_Name
+        string  Primary_Fab
+        string  Primary_Fab_Country
+        string  Wafer_Source
+        string  Key_Materials_Override
+        string  Notes
+    }
+
+    %% =========================================================
+    %% RELAZIONI
+    %% =========================================================
+
+    %% Ingresso BOM → lookup nel DB
+    %% join: BOM.Supplier_Part_Number = Part_Numbers.Part_Number (case-insensitive via _normalize_pn)
+    BOM_FILE             }o--o|   Part_Numbers       : "lookup (case-insensitive)"
+
+    %% BOM loader scrive qty/buffer in Client_Data dopo batch analysis
+    BOM_FILE             }o--o{   Client_Data        : "scrive Qty + Buffer_Stock"
+
+    %% Part_Numbers con dati per-cliente
+    Part_Numbers         ||--o{   Client_Data        : "Part_Number"
+    Client_Data          }o--||   Clients            : "Client_ID"
+
+    %% Part_Numbers → EMS (soft join per nome stringa)
+    Part_Numbers         }o--o|   EMS_Providers      : "EMS_Name (soft join)"
+
+    %% Part_Numbers → Distributori (via tabella bridge)
+    Part_Numbers         ||--o{   Part_Distributors  : "Part_Number"
+    Part_Distributors    }o--||   Distributors       : "Distributor_ID"
+
+    %% Part_Numbers → Fonti alternative
+    Part_Numbers         ||--o{   Alt_Sources        : "Part_Number"
+
+    %% Part_Numbers → Materiali Tier-2 (via tabella bridge)
+    Part_Numbers         ||--o{   Component_Materials : "Part_Number"
+    Component_Materials  }o--||   Tier2_Suppliers    : "Tier2_Supplier_ID"
+
+    %% Part_Numbers → Profilo fornitore (soft join su Supplier_Name)
+    Part_Numbers         }o--o|   Supplier_Profiles  : "Supplier_Name (soft join)"

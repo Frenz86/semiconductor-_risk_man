@@ -11,7 +11,9 @@
       "Bash(powershell -Command \"Write-Output $PROFILE\")",
       "Bash(powershell -NoProfile -Command \"[System.Environment]::GetEnvironmentVariable\\(''USERPROFILE''\\)\")",
       "Bash(powershell -NoProfile -Command \":*)",
-      "Bash(python -c \"from risk_engine import calculate_component_risk, _calculate_hidden_single_source; print\\(''Import OK''\\); r = _calculate_hidden_single_source\\({}, []\\); print\\(''Empty list:'', r\\); r2 = _calculate_hidden_single_source\\({}, 3\\); print\\(''Int input:'', r2\\)\")"
+      "Bash(python -c \"from risk_engine import calculate_component_risk, _calculate_hidden_single_source; print\\(''Import OK''\\); r = _calculate_hidden_single_source\\({}, []\\); print\\(''Empty list:'', r\\); r2 = _calculate_hidden_single_source\\({}, 3\\); print\\(''Int input:'', r2\\)\")",
+      "Bash(python populate_sample_data.py)",
+      "Bash(python:*)"
     ]
   }
 }
