@@ -137,10 +137,3 @@ def render_tab_analisi_rapida():
         """)
 
 
-# =============================================================================
-# TAB 2: ANALISI MULTIPLA
-# =============================================================================
-
-_QTY_COL = 'How Many Device of this specific PN are in the BOM?'
-_BUF_COL = 'If Dedicated Buffer Stock Units to the supplier is yes specify the number of Units'
-

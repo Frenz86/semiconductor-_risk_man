@@ -12,11 +12,8 @@ import streamlit as st
 
 
 _DATA_DIR = Path(__file__).parent.parent.parent / 'data'
-_QTY_COL = 'How Many Device of this specific PN are in the BOM?'
-_BUF_COL = 'If Dedicated Buffer Stock Units to the supplier is yes specify the number of Units'
 
-# Import moduli personalizzati
-from ._shared import render_geo_detail
+from ._shared import render_geo_detail, _QTY_COL, _BUF_COL
 
 def _extract_bom_client_data(df_uploaded, pn_col):
     """Estrae qty e buffer stock dalla BOM per ogni PN. Restituisce {PN_UPPER: {col: val}}."""

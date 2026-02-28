@@ -15,7 +15,6 @@ from pn_lookup import PartNumberDatabase
 
 # Import moduli UI
 from tabs import (
-    render_tab_analisi_rapida,
     render_tab_analisi_multipla,
     render_tab_albero_dipendenze,
     render_tab_mappa_geopolitica,
@@ -263,7 +262,7 @@ st.markdown("**Analisi deterministica del rischio con dipendenze, geo-risk front
 # TABS
 # =============================================================================
 
-tab9, tab2, tab3, tab4, tab5, tab_t2, tab6, tab_filiera, tab7, tab8 = st.tabs([
+tab_guida, tab_multipla, tab_dashboard, tab_albero, tab_mappa, tab_tier2, tab_switching, tab_filiera, tab_whatif, tab_database = st.tabs([
     "Guida",
     "Analisi Multipla",
     "Dashboard",
@@ -280,34 +279,32 @@ tab9, tab2, tab3, tab4, tab5, tab_t2, tab6, tab_filiera, tab7, tab8 = st.tabs([
 # RENDER TAB FUNCTIONS
 # =============================================================================
 
-with tab9:
+with tab_guida:
     render_tab_guida()
 
-with tab2:
+with tab_multipla:
     render_tab_analisi_multipla()
 
-
-with tab3:
+with tab_dashboard:
     render_tab_dashboard_esecutiva()
 
-
-with tab4:
+with tab_albero:
     render_tab_albero_dipendenze()
 
-with tab5:
+with tab_mappa:
     render_tab_mappa_geopolitica()
 
-with tab_t2:
+with tab_tier2:
     render_tab_tier2_visibility()
 
-with tab6:
+with tab_switching:
     render_tab_costi_switching()
 
 with tab_filiera:
     render_tab_filiera_commerciale()
 
-with tab7:
+with tab_whatif:
     render_tab_simulatore_whatif()
 
-with tab8:
+with tab_database:
     render_tab_gestione_database()
