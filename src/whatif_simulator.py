@@ -317,7 +317,29 @@ def calculate_adjusted_risk_score(
             risk_increase = original_score * 0.05
         adjusted = min(100, original_score + risk_increase)
 
-    else:  # supplier_outage, demand_surge, altri
+    elif scenario_type == 'supplier_outage':
+        # Interruzione fornitore: rischio critico se non ci sono alternative
+        weeks = scenario.get('weeks', 4)
+        buffer_gap = max(0, weeks - new_buffer_weeks)
+        # Penalità proporzionale: ogni settimana senza buffer = +2.5 punti
+        outage_penalty = min(30, buffer_gap * 2.5)
+        # Risk increase base: interruzione fornitore = +40% score
+        risk_increase = original_score * 0.40
+        adjusted = min(100, original_score + risk_increase + outage_penalty)
+
+    elif scenario_type == 'demand_surge':
+        # Picco domanda: consuma il buffer più velocemente
+        # Penalità: +25% dello score originale per surge significativo
+        demand_penalty = min(20, original_score * 0.25)
+        adjusted = min(100, original_score + demand_penalty)
+
+    elif scenario_type == 'material_shortage':
+        # Carenza materiale Tier-2: impatto parziale rispetto country_block
+        risk_multiplier = scenario.get('risk_multiplier', 2.0)
+        base_increase = original_score * (risk_multiplier - 1) * 0.5
+        adjusted = min(100, original_score + base_increase)
+
+    else:  # Fallback per tipi di scenario sconosciuti
         adjusted = original_score
 
     change = adjusted - original_score

@@ -24,9 +24,29 @@ Analizza BOM (Bill of Materials) di schede elettroniche, calcola un risk score d
 
 ---
 
+## IP/SW Dependencies Risk
+
+**Novità v4.1:** Aggiunto rischio specifico per dipendenze software e IP proprietario.
+
+Ogni Part Number può avere dipendenze su IP/SW critiche (es. driver periferiche, stack firmware, EDA tools). Il motore calcola un **IP Risk score (0–20)** basato su:
+
+- **Maintenance Status**: Abandoned (+10) → Deprecated (+7) → Maintenance_Only (+4) → Active (0)
+- **Vendor Lock-in**: IPs proprietarie dallo stesso vendor → penalità +3
+- **Alternative Scarcity**: IPs senza alternative vendor → +2 per IP (max +5)
+
+Questo score viene poi normalizzato a 0–10 e incluso nel **Fattore 19** del motore di rischio.
+
+**Livelli di criticità:**
+- **CRITICAL**: score >= 15 (IPs Abandoned)
+- **HIGH**: score >= 8 (IPs Deprecated o vendor lock-in)
+- **MEDIUM**: score >= 3
+- **LOW**: score < 3
+
+---
+
 ## Risk Engine
 
-Il motore di rischio calcola uno **score 0–100** per ogni componente basato su 18 fattori.
+Il motore di rischio calcola uno **score 0–100** per ogni componente basato su 20 fattori (v4.1+).
 
 ### Fattori base (pesati) — Fattori 1–15
 
@@ -40,21 +60,23 @@ Il motore di rischio calcola uno **score 0–100** per ogni componente basato su
 | Proprietarieta' | 10% | Commodity vs. proprietario/custom |
 | Certificazioni | 5% | Tempo di riqualifica (AEC-Q100, IEC 61508, ecc.) |
 
-### Fattori addizionali — Fattori 16–18
+### Fattori addizionali — Fattori 16–20
 
-| Fattore | Punti Max | Dettaglio |
-|---------|-----------|-----------|
-| EOL Status | +15 | Active / NRND / Last_Buy / EOL / Obsolete |
-| Alternative Sources | +10 / -3 | Fonti alternative sul mercato |
-| Salute Finanziaria Fornitore | +8 | Rating A / B / C / D |
-| Allocation Status | +10 | Normal / Constrained / Allocated |
-| Aumento Prezzo | +5 | Ultimo aumento % come segnale di tensione |
-| Package Type | +3 | Package avanzati (WLCSP, FCBGA, 3D) |
-| Technology Node | +5 | Nodi avanzati <= 7nm |
-| Tier-2/3 Supply Chain | +15 | Concentrazione materiali critici a monte |
-| **EMS Risk** (F16) | +12 | Rischio produttore a contratto (concentrazione, backup, audit) |
-| **Distributor Risk** (F17) | +10 | Rischio distributore (mono-distributore, stock, greymarket) |
-| **Hidden Single Source** (F18) | +12 | SPOF nascosto: fonti alternative convergono sullo stesso paese/fab |
+| Fattore | Punti Max | Dettaglio | Versione |
+|---------|-----------|-----------|----------|
+| EOL Status | +15 | Active / NRND / Last_Buy / EOL / Obsolete | v3.0+ |
+| Alternative Sources | +10 / -3 | Fonti alternative sul mercato | v3.0+ |
+| Salute Finanziaria Fornitore | +8 | Rating A / B / C / D | v3.0+ |
+| Allocation Status | +10 | Normal / Constrained / Allocated | v3.0+ |
+| Aumento Prezzo | +5 | Ultimo aumento % come segnale di tensione | v3.0+ |
+| Package Type | +3 | Package avanzati (WLCSP, FCBGA, 3D) | v3.0+ |
+| Technology Node | +5 | Nodi avanzati <= 7nm | v3.0+ |
+| Tier-2/3 Supply Chain | +15 | Concentrazione materiali critici a monte | v3.0+ |
+| **EMS Risk** (F16) | +12 | Rischio produttore a contratto (concentrazione, backup, audit) | v4.0+ |
+| **Distributor Risk** (F17) | +10 | Rischio distributore (mono-distributore, stock, greymarket) | v4.0+ |
+| **Hidden Single Source** (F18) | +12 | SPOF nascosto: fonti alternative convergono sullo stesso paese/fab | v4.0+ |
+| **IP/SW Dependency Risk** (F19) | +10 | Rischio proprietary lock-in, IPs Abandoned/Deprecated (v4.1+) | **v4.1+** |
+| **Market Shortage** (F20) | +8 | Penalita' per interfacce/materiali in shortage globale (Tight/Critical) | **v5.0+** |
 
 **Soglie di rischio:**
 - **ALTO** (rosso): score >= 55
@@ -138,20 +160,38 @@ semiconductor_risk_man/
 
 ---
 
-## Database Excel — 10 fogli
+## Database Excel — 11 fogli
 
-| Foglio | Contenuto |
-|--------|-----------|
-| `Part_Numbers` | Repository globale componenti (38+ campi) |
-| `Client_Data` | Override per cliente: qty BOM, buffer stock, lead time custom |
-| `Clients` | Anagrafica clienti con run rate default |
-| `Tier2_Suppliers` | Fornitori Tier-2 custom (materiale, paese, market share, criticita') |
-| `Component_Materials` | Associazioni PN ↔ materiale Tier-2 custom |
-| `EMS_Providers` | Produttori a contratto (EMS/ODM) con risk score |
-| `Distributors` | Distributori autorizzati con risk score |
-| `Part_Distributors` | Associazioni PN ↔ distributore |
-| `Alt_Sources` | Fonti alternative (second source, cross-ref) |
-| `Supplier_Profiles` | Profili finanziari e operativi dei fornitori |
+| Foglio | Contenuto | Versione |
+|--------|-----------|----------|
+| `Part_Numbers` | Repository globale componenti (38+ campi) | v1.0+ |
+| `Client_Data` | Override per cliente: qty BOM, buffer stock, lead time custom | v2.0+ |
+| `Clients` | Anagrafica clienti con run rate default | v1.0+ |
+| `Tier2_Suppliers` | Fornitori Tier-2 custom (materiale, paese, market share, criticita') | v3.0+ |
+| `Component_Materials` | Associazioni PN ↔ materiale Tier-2 custom | v3.0+ |
+| `EMS_Providers` | Produttori a contratto (EMS/ODM) con risk score | v4.0+ |
+| `Distributors` | Distributori autorizzati con risk score | v4.0+ |
+| `Part_Distributors` | Associazioni PN ↔ distributore | v4.0+ |
+| `Alt_Sources` | Fonti alternative (second source, cross-ref) | v4.0+ |
+| `Supplier_Profiles` | Profili finanziari e operativi dei fornitori | v4.0+ |
+| `IP_Dependencies` | Dipendenze IP/SW: firmware stack, driver, EDA tools, proprietary IPs | **v4.1+** |
+
+### Schema `IP_Dependencies`
+
+| Colonna | Tipo | Descrizione |
+|---------|------|-------------|
+| `IP_Dep_ID` | String | ID univoco (es. IPD_001) |
+| `Part_Number` | String (FK) | Part Number dipendente |
+| `IP_Name` | String | Nome IP/SW (es. "USB3.0 PHY Stack") |
+| `IP_Type` | Enum | Peripheral_Library / Firmware_Stack / RTOS / Driver / EDA_IP / Design_Kit / Protocol_Stack |
+| `IP_Vendor` | String | Fornitore IP (es. "Synaptics", "ARM", "Cadence") |
+| `License_Type` | Enum | Proprietary / Open_Source / Custom / BSD / MIT |
+| `Maintenance_Status` | Enum | **Active** / Maintenance_Only / Deprecated / Abandoned |
+| `Last_Release_Year` | Integer | Anno ultima release (es. 2024) |
+| `Vendor_Alternatives` | Integer | N. vendor alternativi disponibili (0 = nessuno) |
+| `Notes` | String | Descrizione aggiuntiva |
+| `Created_at` | Timestamp | Data creazione record |
+| `Updated_at` | Timestamp | Data ultimo aggiornamento |
 
 ---
 

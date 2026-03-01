@@ -1,7 +1,7 @@
 """
 https://semiconductor-riskman.streamlit.app/
 
-Supply Chain Risk Assessment Tool v4.0 - Resilience Platform
+Supply Chain Risk Assessment Tool v4.1 - Resilience Platform
 
 Per eseguire:
 1. pip install -r requirements.txt
@@ -121,7 +121,7 @@ def show_login_page():
     with st.form("login_form"):
         username = st.text_input("Username", placeholder="Enter username")
         password = st.text_input("Password", type="password", placeholder="Enter password")
-        submit = st.form_submit_button("Login", use_container_width=True)
+        submit = st.form_submit_button("Login", width=True)
 
         if submit:
             if username and password:
@@ -158,9 +158,14 @@ def init_session_state():
         st.stop()
 
     if 'db' not in st.session_state:
-        st.session_state.db = PartNumberDatabase()
-        # Migra database se necessario
-        st.session_state.db.migrate_database()
+        try:
+            st.session_state.db = PartNumberDatabase()
+            # Migra database se necessario
+            st.session_state.db.migrate_database()
+        except Exception as e:
+            st.error(f"❌ Errore inizializzazione database: {str(e)}")
+            st.info("📋 Contattare l'amministratore o verificare che 'data/part_numbers_db.xlsx' esista.")
+            st.stop()
 
     if 'current_client' not in st.session_state:
         clients = st.session_state.db.get_all_clients()
@@ -188,6 +193,18 @@ def get_client_run_rate(client_id):
     return client['Default_Run_Rate'] if client else 5000
 
 
+def save_run_rate_to_db():
+    """Callback: salva il run rate nel database quando cambia."""
+    if st.session_state.current_client:
+        new_run_rate = st.session_state.run_rate_input
+        success = st.session_state.db.update_client_run_rate(
+            st.session_state.current_client,
+            new_run_rate
+        )
+        if success:
+            st.session_state.run_rate = new_run_rate
+
+
 
 # =============================================================================
 # SIDEBAR
@@ -196,7 +213,7 @@ def get_client_run_rate(client_id):
 with st.sidebar:
     # User info e logout
     st.markdown(f"👤 **User:** {st.session_state.username}")
-    if st.button("Logout", use_container_width=True):
+    if st.button("Logout", width=True):
         st.session_state.logged_in = False
         st.session_state.username = None
         st.rerun()
@@ -225,7 +242,8 @@ with st.sidebar:
         min_value=1,
         value=st.session_state.run_rate,
         step=100,
-        key="run_rate_input"
+        key="run_rate_input",
+        on_change=save_run_rate_to_db
     )
 
     st.markdown("---")

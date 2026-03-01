@@ -13,7 +13,8 @@ from whatif_simulator import (
     simulate_disruption,
     get_predefined_scenarios,
     _is_component_affected as _check_affected,
-    SCENARIO_TYPES
+    SCENARIO_TYPES,
+    COUNTRY_BLOCK_CONFIG
 )
 import pandas as pd
 import streamlit as st
@@ -410,7 +411,7 @@ def render_tab_simulatore_whatif():
                         color_score,
                         subset=['Orig. Score', 'New Score']
                     ),
-                    use_container_width=True,
+                    width=True,
                     hide_index=True
                 )
 

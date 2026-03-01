@@ -627,6 +627,33 @@ class PartNumberDatabase:
             print(f"Errore nell'aggiungere il cliente: {e}")
             return False
 
+    def update_client_run_rate(self, client_id: str, run_rate: int) -> bool:
+        """
+        Aggiorna il run rate di un cliente.
+
+        Args:
+            client_id: ID univoco del cliente
+            run_rate: Nuovo run rate (PCB/week)
+
+        Returns:
+            True se successo, False altrimenti
+        """
+        try:
+            df_clients = self._load_sheet(SHEET_CLIENTS)
+            client_id_upper = client_id.upper()
+            mask = df_clients['Client_ID'].astype(str).str.upper() == client_id_upper
+
+            if not mask.any():
+                return False  # Cliente non trovato
+
+            df_clients.loc[mask, 'Default_Run_Rate'] = run_rate
+            self._save_sheet(df_clients, SHEET_CLIENTS)
+            return True
+
+        except Exception as e:
+            print(f"Errore nell'aggiornare il run rate: {e}")
+            return False
+
     def get_client(self, client_id: str) -> Optional[Dict[str, Any]]:
         """Restituisce i dati di un cliente."""
         df_clients = self._load_sheet(SHEET_CLIENTS)
