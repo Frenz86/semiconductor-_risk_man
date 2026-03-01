@@ -6,70 +6,70 @@ import streamlit as st
 
 
 def render_tab_guida():
-    """Tab Guida: documentazione completa della piattaforma v4.0"""
+    """Guide Tab: complete platform documentation v4.0"""
 
     st.title("Supply Chain Resilience Platform — v4.0")
     st.markdown(
-        "Strumento B2B per la valutazione e mitigazione proattiva del rischio nella "
-        "supply chain elettronica. Copre l'intera filiera verticale: dai materiali Tier-2 "
-        "fino al canale distributivo."
+        "B2B tool for proactive risk assessment and mitigation in the "
+        "electronics supply chain. Covers the entire vertical supply chain: from Tier-2 materials "
+        "all the way to the distribution channel."
     )
 
     st.markdown("---")
 
     # =========================================================================
-    # ARCHITETTURA
+    # ARCHITECTURE
     # =========================================================================
-    st.header("Architettura della Piattaforma")
+    st.header("Platform Architecture")
 
     st.markdown("""
-La piattaforma modella **quattro livelli della supply chain** in modo integrato:
+The platform models **four supply chain levels** in an integrated way:
 
 ```
-Materiali Tier-2/3          Neon gas, photoresists, wafer, terre rare, SiC...
+Tier-2/3 Materials          Neon gas, photoresists, wafer, rare earths, SiC...
         ↓
-Fornitore Tier-1            STMicro, Infineon, NXP, TI, Renesas...
+Tier-1 Supplier             STMicro, Infineon, NXP, TI, Renesas...
         ↓
-EMS / Terzista              Foxconn, Flextronics, Jabil, produzione in house...
+EMS / Contract Mfg.         Foxconn, Flextronics, Jabil, in-house production...
         ↓
-Canale Distributivo         Arrow, Avnet, TTI, Digi-Key...
+Distribution Channel        Arrow, Avnet, TTI, Digi-Key...
         ↓
-Cliente (BOM)               Componenti elettronici in produzione
+Customer (BOM)              Electronic components in production
 ```
 
-Il **risk engine deterministico** aggrega 18 fattori in uno score 0–100 per componente,
-con cap a 100 e classificazione ALTO/MEDIO/BASSO.
+The **deterministic risk engine** aggregates 18 factors into a 0–100 score per component,
+capped at 100 and classified HIGH/MEDIUM/LOW.
     """)
 
     st.markdown("---")
 
     # =========================================================================
-    # TAB DISPONIBILI
+    # AVAILABLE TABS
     # =========================================================================
-    st.header("Tab della Piattaforma")
+    st.header("Platform Tabs")
 
     tab_docs = {
-        "Analisi Multipla": "Carica una BOM da file Excel (o seleziona un esempio) ed esegui l'analisi batch. "
-                            "Tutti i tab successivi si popolano da qui. Supporta file .xlsx e .csv con colonna 'Part Number'.",
-        "Dashboard Esecutiva": "One-pager per il management: KPI principali, heat map categorie × livello rischio, "
-                               "top 10 componenti a rischio, alert filiera commerciale (hidden SPOF, mono-distributore, EMS critico), "
-                               "azioni raccomandate per priorità.",
-        "Albero Dipendenze": "Grafo direzionale delle dipendenze funzionali tra componenti. "
-                             "Identifica SPOF, propaga il rischio lungo le catene, calcola score di coppia. "
-                             "Richiede NetworkX (pip install networkx).",
-        "Mappa Geopolitica": "Visualizza i rischi geopolitici Frontend (wafer fab) e Backend (assembly/test) "
-                             "su mappa interattiva. Heatmap concentrazione paesi e analisi per fornitore.",
-        "Tier-2/3 Visibility": "Analizza le dipendenze sui materiali critici a monte dei fornitori Tier-1 "
-                               "(neon gas, photoresists, wafer, terre rare, SiC, palladio, ecc.). "
-                               "Con profili fornitore registrati, usa dati fab-specifici invece dei default per categoria.",
-        "Costi di Switching": "Stima le ore-uomo per sostituire un componente: porting SW, validazione, certificazione. "
-                              "Classificazione TRIVIALE/MODERATO/COMPLESSO/CRITICO.",
-        "Filiera Commerciale": "**Nuovo v4.0** — Analisi EMS risk, rischio distributore, hidden single source detection, "
-                               "simulatore stock-out distributore.",
-        "Simulatore What-If": "Simula 12 scenari predefiniti (blocco Taiwan, carenze materiali, stock-out distributore, "
-                              "EMS overload, aumento lead time). Calcola impatto su buffer stock e impatto finanziario.",
-        "Gestione Database": "CRUD completo per tutti i dati: part numbers, clienti, EMS providers, distributori, "
-                             "fonti alternative, profili fornitore. Tutti i dati si inseriscono qui — mai modificando l'Excel manualmente.",
+        "Multiple Analysis": "Load a BOM from an Excel file (or select an example) and run the batch analysis. "
+                             "All subsequent tabs are populated from here. Supports .xlsx and .csv files with a 'Part Number' column.",
+        "Executive Dashboard": "One-pager for management: main KPIs, category x risk level heat map, "
+                               "top 10 at-risk components, commercial supply chain alerts (hidden SPOF, mono-distributor, critical EMS), "
+                               "recommended actions by priority.",
+        "Dependency Tree": "Directional graph of functional dependencies between components. "
+                           "Identifies SPOFs, propagates risk along chains, calculates pair scores. "
+                           "Requires NetworkX (pip install networkx).",
+        "Geopolitical Map": "Displays Frontend (wafer fab) and Backend (assembly/test) geopolitical risks "
+                            "on an interactive map. Country concentration heatmap and per-supplier analysis.",
+        "Tier-2/3 Visibility": "Analyzes dependencies on critical upstream materials from Tier-1 suppliers "
+                               "(neon gas, photoresists, wafer, rare earths, SiC, palladium, etc.). "
+                               "With registered supplier profiles, uses fab-specific data instead of category defaults.",
+        "Switching Costs": "Estimates man-hours to replace a component: SW porting, validation, certification. "
+                           "Classification: TRIVIAL/MODERATE/COMPLEX/CRITICAL.",
+        "Commercial Supply Chain": "**New v4.0** — EMS risk analysis, distributor risk, hidden single source detection, "
+                                   "distributor stock-out simulator.",
+        "What-If Simulator": "Simulates 12 predefined scenarios (Taiwan block, material shortages, distributor stock-out, "
+                             "EMS overload, lead time increase). Calculates impact on buffer stock and financial impact.",
+        "Database Management": "Full CRUD for all data: part numbers, clients, EMS providers, distributors, "
+                               "alternative sources, supplier profiles. All data is entered here — never by editing Excel manually.",
     }
 
     for tab_name, description in tab_docs.items():
@@ -79,234 +79,234 @@ con cap a 100 e classificazione ALTO/MEDIO/BASSO.
     st.markdown("---")
 
     # =========================================================================
-    # MODELLO DI SCORING — 18 FATTORI
+    # SCORING MODEL — 18 FACTORS
     # =========================================================================
-    st.header("Modello di Scoring — 18 Fattori")
-    st.markdown("Score finale = somma fattori 1–18, capped a 100.")
+    st.header("Scoring Model — 18 Factors")
+    st.markdown("Final score = sum of factors 1–18, capped at 100.")
 
     st.markdown("""
-| # | Fattore | Max | Livello supply chain |
-|---|---------|-----|----------------------|
-| 1 | Concentrazione Geografica (Frontend/Backend) | 25 | Fornitore Tier-1 |
-| 2 | Single Source (stabilimenti produttivi) | 20 | Fornitore Tier-1 |
-| 3 | Lead Time | 15 | Fornitore Tier-1 |
-| 4 | Buffer Stock | −15 (bonus riduzione) | Cliente |
-| 5 | Dipendenze Funzionali (chain risk) | 10 | BOM |
-| 6 | Proprietary / Commodity | 10 | Componente |
-| 7 | Certificazioni richieste | 5 | Componente |
-| 8 | EOL Status | +15 | Fornitore Tier-1 |
-| 9 | Alternative Sources (n. fonti) | +10 / −3 | Mercato |
-| 10 | Salute Finanziaria Fornitore | +8 | Fornitore Tier-1 |
-| 11 | Allocation Status | +10 | Mercato |
-| 12 | Aumento Prezzo (% ultimo ciclo) | +5 | Mercato |
-| 13 | Package Type | +3 | Componente |
+| # | Factor | Max | Supply chain level |
+|---|--------|-----|--------------------|
+| 1 | Geographic Concentration (Frontend/Backend) | 25 | Tier-1 Supplier |
+| 2 | Single Source (production facilities) | 20 | Tier-1 Supplier |
+| 3 | Lead Time | 15 | Tier-1 Supplier |
+| 4 | Buffer Stock | −15 (reduction bonus) | Customer |
+| 5 | Functional Dependencies (chain risk) | 10 | BOM |
+| 6 | Proprietary / Commodity | 10 | Component |
+| 7 | Required Certifications | 5 | Component |
+| 8 | EOL Status | +15 | Tier-1 Supplier |
+| 9 | Alternative Sources (no. of sources) | +10 / −3 | Market |
+| 10 | Supplier Financial Health | +8 | Tier-1 Supplier |
+| 11 | Allocation Status | +10 | Market |
+| 12 | Price Increase (% last cycle) | +5 | Market |
+| 13 | Package Type | +3 | Component |
 | 14 | Technology Node | +5 | Wafer fab |
-| 15 | Tier-2/3 Supply Chain | +15 | Materiali Tier-2 |
-| 16 | **EMS Risk** | **+12** | **EMS / Terzista** |
-| 17 | **Distributor Risk** | **+10** | **Canale Distributivo** |
+| 15 | Tier-2/3 Supply Chain | +15 | Tier-2 Materials |
+| 16 | **EMS Risk** | **+12** | **EMS / Contract Mfg.** |
+| 17 | **Distributor Risk** | **+10** | **Distribution Channel** |
 | 18 | **Hidden Single Source** | **+12** | **Multi-sourcing** |
     """)
 
     st.markdown("---")
 
     # =========================================================================
-    # DETTAGLIO NUOVI MODULI v4.0
+    # NEW MODULES DETAIL v4.0
     # =========================================================================
-    st.header("Nuovi Moduli v4.0")
+    st.header("New Modules v4.0")
 
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("EMS Risk (Fattore 16 — max +12 pt)")
+        st.subheader("EMS Risk (Factor 16 — max +12 pt)")
         st.markdown("""
-Valuta il rischio del terzista/EMS su 6 dimensioni:
+Evaluates contract manufacturer/EMS risk across 6 dimensions:
 
-| Sub-fattore | Max |
-|-------------|-----|
-| Salute finanziaria (A→D) | 15 pt |
-| Utilizzo capacità (>95% = CRITICO) | 15 pt |
-| Siti di backup (0 = single-site) | 12 pt |
-| Concentrazione geografica | 15 pt |
-| Gap certificazioni (IATF16949, ISO9001) | 10 pt |
-| Anni di attività (<5 anni) | 5 pt |
+| Sub-factor | Max |
+|------------|-----|
+| Financial health (A→D) | 15 pt |
+| Capacity utilization (>95% = CRITICAL) | 15 pt |
+| Backup sites (0 = single-site) | 12 pt |
+| Geographic concentration | 15 pt |
+| Certification gaps (IATF16949, ISO9001) | 10 pt |
+| Years of activity (<5 years) | 5 pt |
 
-Score EMS cappato a **30 pt**, contribuisce al risk engine come +12 pt max.
+EMS score capped at **30 pt**, contributes to the risk engine as +12 pt max.
 
-Se non è disponibile un profilo EMS completo, viene usata solo la stima geografica dalla `EMS_Location`.
+If no complete EMS profile is available, only the geographic estimate from `EMS_Location` is used.
         """)
 
-        st.subheader("Hidden Single Source (Fattore 18 — max +12 pt)")
+        st.subheader("Hidden Single Source (Factor 18 — max +12 pt)")
         st.markdown("""
-Rileva quando tutte le fonti alternative di un componente
-convergono sullo stesso paese di fabbricazione (Frontend_Country).
+Detects when all alternative sources for a component
+converge on the same manufacturing country (Frontend_Country).
 
-Esempio: 3 fornitori alternativi tutti con fab in Taiwan
-→ diversificazione apparente, rischio reale invariato.
+Example: 3 alternative suppliers all with fab in Taiwan
+→ apparent diversification, real risk unchanged.
 
-| Overlap ratio | Penalità | Livello |
-|---------------|----------|---------|
-| 100% (tutte) | +12 pt | CRITICO |
-| ≥ 67% | +7 pt | ALTO |
-| ≥ 50% | +4 pt | MEDIO |
+| Overlap ratio | Penalty | Level |
+|---------------|---------|-------|
+| 100% (all) | +12 pt | CRITICAL |
+| ≥ 67% | +7 pt | HIGH |
+| ≥ 50% | +4 pt | MEDIUM |
 
-Richiede fonti alternative registrate in **Gestione Database → Fonti Alternative**.
+Requires alternative sources registered in **Database Management → Alternative Sources**.
         """)
 
     with col2:
-        st.subheader("Distributor Risk (Fattore 17 — max +10 pt)")
+        st.subheader("Distributor Risk (Factor 17 — max +10 pt)")
         st.markdown("""
-Valuta il rischio del canale distributivo su 5 dimensioni:
+Evaluates distribution channel risk across 5 dimensions:
 
-| Sub-fattore | Max |
-|-------------|-----|
-| Mono-distributore (solo 1 dist.) | 10 pt |
+| Sub-factor | Max |
+|------------|-----|
+| Mono-distributor (only 1 dist.) | 10 pt |
 | Stock coverage < lead time | 8 pt |
-| Salute finanziaria distributore | 10 pt |
-| Lead time markup (settimane aggiuntive) | 5 pt |
-| Concentrazione geografica distributore | 5 pt |
+| Distributor financial health | 10 pt |
+| Lead time markup (additional weeks) | 5 pt |
+| Distributor geographic concentration | 5 pt |
 
-Score distributore cappato a **25 pt**, contribuisce al risk engine come +10 pt max.
+Distributor score capped at **25 pt**, contributes to the risk engine as +10 pt max.
 
-Se stock coverage ≥ 2× lead time → **bonus −2 pt** (buffer ampio).
+If stock coverage ≥ 2× lead time → **bonus −2 pt** (large buffer).
         """)
 
         st.subheader("Tier1→Tier2 Supplier-Specific Linkage")
         st.markdown("""
-Gerarchia priorità per le dipendenze materiali:
+Priority hierarchy for material dependencies:
 
-1. **Component_Materials** custom (override per singolo PN)
-2. **Profilo Fornitore** (Key_Materials_Override JSON da Gestione DB)
-3. **Default** categoria + technology node
+1. **Component_Materials** custom (per-PN override)
+2. **Supplier Profile** (Key_Materials_Override JSON from Database Management)
+3. **Default** category + technology node
 
-Permette di distinguere:
-- STM32 (fab Agrate IT) → wafer Shin-Etsu (JP), non generici Taiwan
-- NXP i.MX (fab TSMC) → neon gas Ucraina, photoresists Giappone
+Allows distinguishing:
+- STM32 (Agrate IT fab) → Shin-Etsu wafer (JP), not generic Taiwan
+- NXP i.MX (TSMC fab) → Ukraine neon gas, Japan photoresists
 
-I profili fornitore si inseriscono in **Gestione Database → Profili Fornitore**.
+Supplier profiles are entered in **Database Management → Supplier Profiles**.
         """)
 
     st.markdown("---")
 
     # =========================================================================
-    # SIMULATORE WHAT-IF — SCENARI
+    # WHAT-IF SIMULATOR — SCENARIOS
     # =========================================================================
-    st.header("Simulatore What-If — Scenari Disponibili")
+    st.header("What-If Simulator — Available Scenarios")
 
     st.markdown("""
-| Tipo | Scenari predefiniti | Logica impatto |
-|------|--------------------|----|
-| `country_block` | Taiwan ×2, China ×1 | Moltiplicatore rischio + impatto buffer |
-| `lead_time_increase` | +50%, +100% | Aumento proporzionale score lead time |
-| `material_shortage` | Neon gas, Photoresists, Terre rare, SiC | Match per materiale e paese |
-| `distributor_outage` | Arrow 4w, Avnet 6w | Penalità proporzionale gap buffer/stockout |
-| `ems_overload` | Generico 95% capacità | Aumento % score proporzionale a overload |
+| Type | Predefined scenarios | Impact logic |
+|------|---------------------|--------------|
+| `country_block` | Taiwan ×2, China ×1 | Risk multiplier + buffer impact |
+| `lead_time_increase` | +50%, +100% | Proportional increase in lead time score |
+| `material_shortage` | Neon gas, Photoresists, Rare earths, SiC | Match by material and country |
+| `distributor_outage` | Arrow 4w, Avnet 6w | Proportional penalty for buffer/stockout gap |
+| `ems_overload` | Generic 95% capacity | Proportional % score increase by overload level |
 
-Il simulatore calcola per ogni componente impattato:
-- Settimane di buffer rimanenti dopo la disruption
-- Score di rischio aggiustato
-- Impatto finanziario stimato (produzione persa × run rate)
+For each impacted component, the simulator calculates:
+- Remaining buffer weeks after the disruption
+- Adjusted risk score
+- Estimated financial impact (lost production × run rate)
     """)
 
     st.markdown("---")
 
     # =========================================================================
-    # CAMPI DATABASE
+    # DATABASE FIELDS
     # =========================================================================
-    st.header("Campi Database — Valori Ammessi")
+    st.header("Database Fields — Accepted Values")
 
-    st.markdown("**Part Numbers (foglio principale)**")
+    st.markdown("**Part Numbers (main sheet)**")
     st.markdown("""
-| Campo | Valori | Impatto |
-|-------|--------|---------|
-| EOL_Status | Active, NRND, Last_Buy, EOL, Obsolete | Fattore 8 (+0→+15) |
-| Number_of_Alternative_Sources | 0, 1, 2, 3, ... | Fattore 9 |
-| Supplier_Financial_Health | A, B, C, D | Fattore 10 |
-| Allocation_Status | Normal, Constrained, Allocated | Fattore 11 |
-| Last_Price_Increase_Pct | % numerico | Fattore 12 |
-| Package_Type | QFP, BGA, WLCSP, QFN, SOP, DIP, CSP, FCBGA | Fattore 13 |
-| Technology_Node | es. 7nm, 28nm, 180nm | Fattore 14 |
-| Frontend_Country | Paese fab wafer | Fattore 1 + Hidden SPOF |
-| Backend_Country | Paese assembly/test | Fattore 1 |
-| EMS_Used | Y / N | Fattore 16 |
-| EMS_Name | Nome EMS (deve corrispondere a EMS_Providers) | Fattore 16 |
-| Automotive_Grade | None, AEC-Q100, AEC-Q101, AEC-Q200 | Moltiplicatore switching |
+| Field | Values | Impact |
+|-------|--------|--------|
+| EOL_Status | Active, NRND, Last_Buy, EOL, Obsolete | Factor 8 (+0→+15) |
+| Number_of_Alternative_Sources | 0, 1, 2, 3, ... | Factor 9 |
+| Supplier_Financial_Health | A, B, C, D | Factor 10 |
+| Allocation_Status | Normal, Constrained, Allocated | Factor 11 |
+| Last_Price_Increase_Pct | numeric % | Factor 12 |
+| Package_Type | QFP, BGA, WLCSP, QFN, SOP, DIP, CSP, FCBGA | Factor 13 |
+| Technology_Node | e.g. 7nm, 28nm, 180nm | Factor 14 |
+| Frontend_Country | Wafer fab country | Factor 1 + Hidden SPOF |
+| Backend_Country | Assembly/test country | Factor 1 |
+| EMS_Used | Y / N | Factor 16 |
+| EMS_Name | EMS name (must match EMS_Providers) | Factor 16 |
+| Automotive_Grade | None, AEC-Q100, AEC-Q101, AEC-Q200 | Switching multiplier |
     """)
 
-    st.markdown("**Fogli aggiuntivi (gestiti via UI)**")
+    st.markdown("**Additional sheets (managed via UI)**")
     st.markdown("""
-| Foglio | Campi chiave | Uso |
-|--------|-------------|-----|
-| EMS_Providers | EMS_Name, Country, Financial_Health, Capacity_Utilization_Pct, Backup_Sites_Count, Certifications | Fattore 16 completo |
-| Distributors | Name, Country, Financial_Health, Lead_Time_Markup_Weeks, Stock_Level_Weeks_Coverage | Fattore 17 |
-| Part_Distributors | Part_Number, Distributor_ID, Priority (Primary/Secondary), Allocation_Pct | Collegamento PN↔Distributore |
-| Alt_Sources | Part_Number, Supplier_Name, Frontend_Country, Qualification_Status | Fattore 18 Hidden SPOF |
+| Sheet | Key fields | Use |
+|-------|-----------|-----|
+| EMS_Providers | EMS_Name, Country, Financial_Health, Capacity_Utilization_Pct, Backup_Sites_Count, Certifications | Factor 16 full |
+| Distributors | Name, Country, Financial_Health, Lead_Time_Markup_Weeks, Stock_Level_Weeks_Coverage | Factor 17 |
+| Part_Distributors | Part_Number, Distributor_ID, Priority (Primary/Secondary), Allocation_Pct | PN↔Distributor link |
+| Alt_Sources | Part_Number, Supplier_Name, Frontend_Country, Qualification_Status | Factor 18 Hidden SPOF |
 | Supplier_Profiles | Supplier_Name, Primary_Fab, Primary_Fab_Country, Key_Materials_Override (JSON) | Tier1→Tier2 linkage |
     """)
 
     st.markdown("---")
 
     # =========================================================================
-    # FLUSSO DI LAVORO
+    # RECOMMENDED WORKFLOW
     # =========================================================================
-    st.header("Flusso di Lavoro Consigliato")
+    st.header("Recommended Workflow")
 
     st.markdown("""
-**Setup iniziale** (una tantum per cliente):
-1. **Gestione Database → Gestione Clienti**: aggiungi il cliente e il run rate default
-2. **Gestione Database → EMS Providers**: registra i terzisti usati dai componenti
-3. **Gestione Database → Distributori**: registra Arrow, Avnet, TTI, ecc. e associali ai Part Numbers
-4. **Gestione Database → Fonti Alternative**: per ogni PN critico, inserisci le alternative con `Frontend_Country`
-5. **Gestione Database → Profili Fornitore**: per fornitori chiave (STM, NXP, Infineon...), specifica fab e materiali
+**Initial setup** (once per client):
+1. **Database Management → Client Management**: add the client and the default run rate
+2. **Database Management → EMS Providers**: register the contract manufacturers used by components
+3. **Database Management → Distributors**: register Arrow, Avnet, TTI, etc. and link them to Part Numbers
+4. **Database Management → Alternative Sources**: for each critical PN, enter alternatives with `Frontend_Country`
+5. **Database Management → Supplier Profiles**: for key suppliers (STM, NXP, Infineon...), specify fab and materials
 
-**Analisi ricorrente** (per ogni revisione BOM):
-1. Sidebar: seleziona il cliente
-2. **Analisi Multipla**: carica la BOM e avvia l'analisi
-3. **Dashboard Esecutiva**: verifica KPI e alert filiera
-4. **Filiera Commerciale**: analisi EMS, distributori, hidden SPOF
-5. **Simulatore What-If**: testa scenari di disruption (Taiwan, stock-out distributore, EMS overload)
-6. **Tier-2/3 Visibility**: verifica bottleneck materiali
-7. **Export**: genera report PDF per il management
+**Recurring analysis** (for each BOM revision):
+1. Sidebar: select the client
+2. **Multiple Analysis**: load the BOM and start the analysis
+3. **Executive Dashboard**: check KPIs and supply chain alerts
+4. **Commercial Supply Chain**: EMS, distributor, hidden SPOF analysis
+5. **What-If Simulator**: test disruption scenarios (Taiwan, distributor stock-out, EMS overload)
+6. **Tier-2/3 Visibility**: check material bottlenecks
+7. **Export**: generate PDF report for management
     """)
 
     st.markdown("---")
 
     # =========================================================================
-    # CLASSIFICAZIONE
+    # CLASSIFICATION
     # =========================================================================
-    st.subheader("Classificazione Finale")
+    st.subheader("Final Classification")
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.markdown('<div class="risk-red"><h3>ALTO</h3><p>Score ≥ 55</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="risk-red"><h3>HIGH</h3><p>Score ≥ 55</p></div>', unsafe_allow_html=True)
     with col2:
-        st.markdown('<div class="risk-yellow"><h3>MEDIO</h3><p>Score 30–54</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="risk-yellow"><h3>MEDIUM</h3><p>Score 30–54</p></div>', unsafe_allow_html=True)
     with col3:
-        st.markdown('<div class="risk-green"><h3>BASSO</h3><p>Score &lt; 30</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="risk-green"><h3>LOW</h3><p>Score &lt; 30</p></div>', unsafe_allow_html=True)
 
     st.markdown("---")
 
     # =========================================================================
-    # LIMITI NOTI
+    # KNOWN LIMITATIONS AND ROADMAP
     # =========================================================================
-    st.header("Limiti Noti e Roadmap")
+    st.header("Known Limitations and Roadmap")
     st.markdown("""
-| Limite | Workaround attuale | Sviluppo futuro |
-|--------|--------------------|-----------------|
-| Nessun trend storico | Baseline statica nella Dashboard | Salvataggio analisi per data |
-| EMS score parziale senza profilo | Stima da EMS_Location (geo only) | Arricchimento automatico via API |
-| Credenziali login hardcoded | Sicure per uso interno | Integrazione LDAP/SSO |
-| PDF export non copre tab Filiera | Export da tab Analisi Multipla | Estensione pdf_export.py |
-| Nessuna integrazione dati di mercato | Inserimento manuale prezzi e allocation | Feed Octopart/SiliconExpert |
+| Limitation | Current workaround | Future development |
+|------------|-------------------|-------------------|
+| No historical trend | Static baseline in Dashboard | Save analysis by date |
+| Partial EMS score without profile | Estimate from EMS_Location (geo only) | Automatic enrichment via API |
+| Hardcoded login credentials | Secure for internal use | LDAP/SSO integration |
+| PDF export does not cover Supply Chain tab | Export from Multiple Analysis tab | Extend pdf_export.py |
+| No market data integration | Manual price and allocation entry | Octopart/SiliconExpert feed |
     """)
 
     st.markdown("---")
-    st.subheader("Classificazione Finale")
+    st.subheader("Final Classification")
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.markdown('<div class="risk-red"><h3>ALTO</h3><p>Score >= 55</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="risk-red"><h3>HIGH</h3><p>Score >= 55</p></div>', unsafe_allow_html=True)
     with col2:
-        st.markdown('<div class="risk-yellow"><h3>MEDIO</h3><p>Score 30-54</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="risk-yellow"><h3>MEDIUM</h3><p>Score 30-54</p></div>', unsafe_allow_html=True)
     with col3:
-        st.markdown('<div class="risk-green"><h3>BASSO</h3><p>Score < 30</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="risk-green"><h3>LOW</h3><p>Score < 30</p></div>', unsafe_allow_html=True)
 
 
 # =============================================================================

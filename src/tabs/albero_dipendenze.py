@@ -8,16 +8,16 @@ import streamlit as st
 
 
 def render_tab_albero_dipendenze():
-    """Tab 3: Albero di Correlazione Funzionale"""
-    st.header("Albero di Correlazione Funzionale")
+    """Tab 3: Functional Correlation Tree"""
+    st.header("Functional Correlation Tree")
     st.markdown("""
-    Questo modulo costruisce il grafo delle dipendenze tra i componenti nella BOM.
-    Se un componente **non standalone** (es. PMIC) si blocca, il sistema propaga il rischio
-    a tutti i componenti dipendenti (es. MPU), calcolando uno **score di resilienza di coppia**.
+    This module builds the dependency graph between components in the BOM.
+    If a **non-standalone** component (e.g. PMIC) is blocked, the system propagates the risk
+    to all dependent components (e.g. MPU), calculating a **pair resilience score**.
     """)
 
     if not HAS_NETWORKX:
-        st.error("Libreria `networkx` non installata. Esegui: `pip install networkx`")
+        st.error("Library `networkx` not installed. Run: `pip install networkx`")
     else:
         import networkx as nx
         import matplotlib.pyplot as plt
@@ -31,17 +31,17 @@ def render_tab_albero_dipendenze():
 
             if graph is not None and isinstance(graph, nx.DiGraph) and len(graph.nodes()) > 0:
 
-                # --- Visualizzazione networkx DiGraph ---
-                st.subheader("Grafo Dipendenze (networkx DiGraph)")
+                # --- networkx DiGraph visualization ---
+                st.subheader("Dependency Graph (networkx DiGraph)")
 
                 fig, ax = plt.subplots(figsize=(12, 7))
 
-                # Layout gerarchico se possibile, altrimenti spring
+                # Hierarchical layout if possible, otherwise spring
                 try:
-                    # Prova layout a livelli (top-down)
+                    # Try layered layout (top-down)
                     pos = nx.shell_layout(graph)
                     if nx.is_directed_acyclic_graph(graph):
-                        # Per DAG usa layout multipartite basato sulla profondita'
+                        # For DAG use multipartite layout based on depth
                         for node in graph.nodes():
                             try:
                                 depth = nx.shortest_path_length(graph, node, list(nx.descendants(graph, node))[-1]) if nx.descendants(graph, node) else 0
@@ -52,7 +52,7 @@ def render_tab_albero_dipendenze():
                 except Exception:
                     pos = nx.spring_layout(graph, k=2, iterations=50, seed=42)
 
-                # Colori nodi per livello di rischio
+                # Node colors by risk level
                 chain_risks = bom_risk.get('chain_risks', {})
                 node_colors = []
                 for node in graph.nodes():
@@ -65,7 +65,7 @@ def render_tab_albero_dipendenze():
                     else:
                         node_colors.append('#00C851')
 
-                # Dimensione nodi proporzionale ai dipendenti
+                # Node size proportional to dependents
                 node_sizes = []
                 for node in graph.nodes():
                     try:
@@ -74,7 +74,7 @@ def render_tab_albero_dipendenze():
                         n_dep = 0
                     node_sizes.append(1500 + n_dep * 500)
 
-                # Labels abbreviate
+                # Abbreviated labels
                 labels = {}
                 for node in graph.nodes():
                     supplier = graph.nodes[node].get('supplier', '')
@@ -83,7 +83,7 @@ def render_tab_albero_dipendenze():
                         label += f"\n({supplier})"
                     labels[node] = label
 
-                # Disegna grafo
+                # Draw graph
                 nx.draw_networkx_nodes(graph, pos, ax=ax, node_color=node_colors,
                                        node_size=node_sizes, edgecolors='#333', linewidths=2, alpha=0.9)
                 nx.draw_networkx_labels(graph, pos, ax=ax, labels=labels,
@@ -93,22 +93,22 @@ def render_tab_albero_dipendenze():
                                        connectionstyle='arc3,rad=0.1', width=2.5,
                                        min_source_margin=25, min_target_margin=25)
 
-                # Etichette sugli archi
+                # Edge labels
                 edge_labels = {}
                 for u, v, data in graph.edges(data=True):
-                    edge_labels[(u, v)] = 'dipende da'
+                    edge_labels[(u, v)] = 'depends on'
                 nx.draw_networkx_edge_labels(graph, pos, ax=ax, edge_labels=edge_labels,
                                               font_size=6, font_color='#1a3e6e',
                                               label_pos=0.5, rotate=True)
 
-                # Legenda
+                # Legend
                 from matplotlib.lines import Line2D
                 from matplotlib.patches import FancyArrowPatch
                 legend_elements = [
-                    Line2D([0], [0], marker='o', color='w', markerfacecolor='#ff4444', markersize=12, label='Rischio ALTO'),
-                    Line2D([0], [0], marker='o', color='w', markerfacecolor='#ffbb33', markersize=12, label='Rischio MEDIO'),
-                    Line2D([0], [0], marker='o', color='w', markerfacecolor='#00C851', markersize=12, label='Rischio BASSO'),
-                    Line2D([0], [0], color='#1a3e6e', linewidth=2.5, label='Dipendenza (A -> B)'),
+                    Line2D([0], [0], marker='o', color='w', markerfacecolor='#ff4444', markersize=12, label='HIGH Risk'),
+                    Line2D([0], [0], marker='o', color='w', markerfacecolor='#ffbb33', markersize=12, label='MEDIUM Risk'),
+                    Line2D([0], [0], marker='o', color='w', markerfacecolor='#00C851', markersize=12, label='LOW Risk'),
+                    Line2D([0], [0], color='#1a3e6e', linewidth=2.5, label='Dependency (A -> B)'),
                 ]
                 ax.legend(handles=legend_elements, loc='upper left', framealpha=0.9, fontsize=9)
 
@@ -122,7 +122,7 @@ def render_tab_albero_dipendenze():
                 spofs = bom_risk.get('spofs', [])
                 if spofs:
                     st.subheader("Single Points of Failure")
-                    st.markdown("Componenti la cui indisponibilita' blocca altri componenti:")
+                    st.markdown("Components whose unavailability blocks other components:")
 
                     for spof in spofs:
                         st.markdown(f"""
@@ -136,43 +136,44 @@ def render_tab_albero_dipendenze():
                 # --- Chain Risk Details ---
                 chain_risks_data = bom_risk.get('chain_risks', {})
                 if chain_risks_data:
-                    st.subheader("Rischio di Catena per Componente")
+                    st.subheader("Chain Risk by Component")
 
                     chain_data = []
                     for pn, chain in chain_risks_data.items():
                         chain_data.append({
                             'Part Number': pn,
-                            'Score Individuale': chain.get('own_score', 0),
-                            'Score Catena': chain.get('chain_score', 0),
-                            'Livello Catena': chain.get('chain_level', 'N/A'),
-                            'Standalone': 'Si' if chain.get('is_standalone') else 'No',
-                            'Dipende da': ', '.join(chain.get('dependencies', [])) or '-',
-                            'Dipendono da questo': ', '.join(chain.get('dependents', [])) or '-',
+                            'Individual Score': chain.get('own_score', 0),
+                            'Chain Score': chain.get('chain_score', 0),
+                            'Chain Level': chain.get('chain_level', 'N/A'),
+                            'Standalone': 'Yes' if chain.get('is_standalone') else 'No',
+                            'Depends On': ', '.join(chain.get('dependencies', [])) or '-',
+                            'Dependents': ', '.join(chain.get('dependents', [])) or '-',
                         })
 
                     if chain_data:
                         df_chain = pd.DataFrame(chain_data)
-                        df_chain = df_chain.sort_values('Score Catena', ascending=False)
+                        df_chain = df_chain.sort_values('Chain Score', ascending=False)
                         st.dataframe(df_chain, use_container_width=True, hide_index=True)
 
-                    # Rischi di coppia
+                    # Pair risks
                     pair_risks = []
                     for pn, chain in chain_risks_data.items():
                         for pair in chain.get('pair_risks', []):
                             pair_risks.append(pair)
 
                     if pair_risks:
-                        st.subheader("Score di Resilienza per Coppia Funzionale")
+                        st.subheader("Pair Resilience Score for Functional Pairs")
                         for pair in pair_risks:
                             emoji = "🔴" if pair['pair_color'] == 'RED' else "🟡" if pair['pair_color'] == 'YELLOW' else "🟢"
-                            st.markdown(f"{emoji} **{pair['from']}** <- {pair['to']} : Score coppia = **{pair['pair_score']}**")
+                            st.markdown(f"{emoji} **{pair['from']}** <- {pair['to']} : Pair score = **{pair['pair_score']}**")
             else:
-                st.info("Nessuna dipendenza trovata tra i componenti analizzati. Tutti i componenti sono standalone.")
+                st.info("No dependencies found between the analyzed components. All components are standalone.")
         else:
-            st.info("Esegui prima un'**Analisi Multipla** (Tab 2) per visualizzare le dipendenze tra componenti.")
+            st.info("Run a **Multiple Analysis** (Tab 2) first to visualize dependencies between components.")
 
 
 # =============================================================================
-# TAB 4: MAPPA GEOPOLITICA
+# TAB 4: GEOPOLITICAL MAP
 # =============================================================================
+
 

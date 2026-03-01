@@ -57,7 +57,7 @@ def _save_bom_client_data(qty_data, batch):
 
 def render_tab_analisi_multipla():
     """Tab 2: Analisi Multipla Part Numbers"""
-    st.header("Analisi Multipla Part Numbers")
+    st.header("Multiple Part Numbers Analysis")
 
     col1, col2 = st.columns(2)
 
@@ -69,15 +69,15 @@ def render_tab_analisi_multipla():
     }
 
     with col1:
-        st.subheader("Carica BOM di Esempio")
+        st.subheader("Load Sample BOM")
 
         selected_bom = st.selectbox(
-            "Seleziona BOM",
+            "Select BOM",
             options=list(BOM_EXAMPLES.keys()),
-            help="Seleziona una BOM di esempio da analizzare"
+            help="Select a sample BOM to analyze"
         )
 
-        if st.button("Carica e Analizza BOM", type="primary"):
+        if st.button("Load and Analyze BOM", type="primary"):
             bom_file = BOM_EXAMPLES[selected_bom]
             try:
                 # Leggi il file Excel
@@ -135,25 +135,25 @@ def render_tab_analisi_multipla():
                                 break
 
                     qty_data = _extract_bom_client_data(df_uploaded, pn_col)
-                    st.success(f"Caricati **{len(pns)}** part numbers da **{selected_bom}**")
+                    st.success(f"Loaded **{len(pns)}** part numbers from **{selected_bom}**")
 
                     batch = _run_batch_analysis(pns, st.session_state.current_client, st.session_state.run_rate)
                     st.session_state.batch_results = batch
 
                     saved = _save_bom_client_data(qty_data, batch)
                     if saved > 0:
-                        st.caption(f"Quantità BOM salvate in Client_Data per {saved} componenti")
+                        st.caption(f"BOM quantities saved in Client_Data for {saved} components")
                 else:
-                    st.error("Colonna 'Part Number' non trovata nel file.")
+                    st.error("Column 'Part Number' not found in the file.")
             except Exception as e:
-                st.error(f"Errore nel caricamento del file: {str(e)}")
+                st.error(f"Error loading file: {str(e)}")
 
     with col2:
-        st.subheader("Carica il Tuo File")
+        st.subheader("Upload Your File")
         uploaded_file = st.file_uploader(
-            "Carica file con lista Part Numbers",
+            "Upload file with Part Numbers list",
             type=['csv', 'xlsx', 'xls'],
-            help="Il file deve avere una colonna 'Part Number'"
+            help="The file must have a 'Part Number' column"
         )
 
         if uploaded_file:
@@ -215,20 +215,20 @@ def render_tab_analisi_multipla():
                                 break
 
                     qty_data = _extract_bom_client_data(df_uploaded, pn_col)
-                    st.success(f"Trovati **{len(pns)}** part numbers nel file")
+                    st.success(f"Found **{len(pns)}** part numbers in the file")
 
-                    if st.button("Analizza File Upload", type="primary"):
+                    if st.button("Analyze Uploaded File", type="primary"):
                         batch = _run_batch_analysis(pns, st.session_state.current_client, st.session_state.run_rate)
                         st.session_state.batch_results = batch
 
                         saved = _save_bom_client_data(qty_data, batch)
                         if saved > 0:
-                            st.caption(f"Quantità BOM salvate in Client_Data per {saved} componenti")
+                            st.caption(f"BOM quantities saved in Client_Data for {saved} components")
                 else:
-                    st.error("Colonna 'Part Number' non trovata nel file. Colonne trovate: " +
+                    st.error("Column 'Part Number' not found in the file. Columns found: " +
                              ", ".join(str(c) for c in df_uploaded.columns[:10]))
             except Exception as e:
-                st.error(f"Errore nel caricamento: {str(e)}")
+                st.error(f"Error loading file: {str(e)}")
 
     # Mostra risultati batch
     batch = st.session_state.batch_results
@@ -236,11 +236,11 @@ def render_tab_analisi_multipla():
         st.markdown("---")
 
         # Pulsante export PDF
-        st.subheader("📄 Esporta Report")
+        st.subheader("📄 Export Report")
         show_export_button(batch, st.session_state.current_client, st.session_state.run_rate, key="export_tab_multipla")
         st.markdown("---")
 
-        st.success(f"Trovati **{batch['found_count']}** di **{batch['total_count']}** part numbers")
+        st.success(f"Found **{batch['found_count']}** of **{batch['total_count']}** part numbers")
 
         # Dashboard metriche
         col1, col2, col3, col4, col5 = st.columns(5)
@@ -249,19 +249,19 @@ def render_tab_analisi_multipla():
 
         with col1:
             red_count = sum(1 for r in risks if r['color'] == 'RED')
-            st.metric("Alto Rischio", red_count)
+            st.metric("High Risk", red_count)
 
         with col2:
             yellow_count = sum(1 for r in risks if r['color'] == 'YELLOW')
-            st.metric("Medio Rischio", yellow_count)
+            st.metric("Medium Risk", yellow_count)
 
         with col3:
             green_count = sum(1 for r in risks if r['color'] == 'GREEN')
-            st.metric("Basso Rischio", green_count)
+            st.metric("Low Risk", green_count)
 
         with col4:
             total_mh = sum(r['man_hours'] for r in risks)
-            st.metric("Totale Man-Hours", f"{total_mh:,}h")
+            st.metric("Total Man-Hours", f"{total_mh:,}h")
 
         with col5:
             spof_count = len(batch['bom_risk'].get('spofs', []))
@@ -272,20 +272,20 @@ def render_tab_analisi_multipla():
 
         with col1:
             risk_counts = {
-                'Alto (RED)': red_count,
-                'Medio (YELLOW)': yellow_count,
-                'Basso (GREEN)': green_count
+                'High (RED)': red_count,
+                'Medium (YELLOW)': yellow_count,
+                'Low (GREEN)': green_count
             }
             fig_pie = px.pie(
                 values=list(risk_counts.values()),
                 names=list(risk_counts.keys()),
                 color=list(risk_counts.keys()),
                 color_discrete_map={
-                    'Alto (RED)': '#ff4444',
-                    'Medio (YELLOW)': '#ffbb33',
-                    'Basso (GREEN)': '#00C851'
+                    'High (RED)': '#ff4444',
+                    'Medium (YELLOW)': '#ffbb33',
+                    'Low (GREEN)': '#00C851'
                 },
-                title="Distribuzione per Livello di Rischio"
+                title="Distribution by Risk Level"
             )
             st.plotly_chart(fig_pie, use_container_width=True)
 
@@ -305,12 +305,12 @@ def render_tab_analisi_multipla():
                     'COMPLESSO': '#ff8800',
                     'CRITICO': '#ff4444'
                 },
-                title="Distribuzione Costi di Switching"
+                title="Switching Cost Distribution"
             )
             st.plotly_chart(fig_sw, use_container_width=True)
 
         # Dettaglio rischi per componente
-        st.subheader("Dettaglio Rischi per Componente")
+        st.subheader("Risk Detail by Component")
 
         for risk in sorted(risks, key=lambda x: x['score'], reverse=True):
             color_emoji = "🔴" if risk['color'] == 'RED' else "🟡" if risk['color'] == 'YELLOW' else "🟢"
@@ -324,20 +324,20 @@ def render_tab_analisi_multipla():
                 col1, col2, col3 = st.columns(3)
 
                 with col1:
-                    st.markdown("**Fattori di Rischio:**")
+                    st.markdown("**Risk Factors:**")
                     if risk['factors']:
                         for factor in risk['factors']:
                             st.markdown(f"- {factor}")
                     else:
-                        st.markdown("- Nessun fattore significativo")
+                        st.markdown("- No significant factors")
 
                 with col2:
-                    st.markdown("**Suggerimenti:**")
+                    st.markdown("**Suggestions:**")
                     if risk['suggestions']:
                         for suggestion in risk['suggestions']:
                             st.markdown(f"- {suggestion}")
                     else:
-                        st.markdown("- Nessuna azione richiesta")
+                        st.markdown("- No action required")
 
                 with col3:
                     st.markdown("**Geo Risk Frontend/Backend:**")
@@ -348,7 +348,7 @@ def render_tab_analisi_multipla():
 
         # PN non trovati
         if batch['not_found']:
-            st.warning(f"**{len(batch['not_found'])}** part numbers non trovati: {', '.join(batch['not_found'])}")
+            st.warning(f"**{len(batch['not_found'])}** part numbers not found: {', '.join(batch['not_found'])}")
 
 
 # =============================================================================

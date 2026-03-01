@@ -19,50 +19,50 @@ from typing import Dict, Any, List, Optional
 
 # Rischio Frontend (fabbricazione wafer) - peso 60% dello score geo
 FRONTEND_RISK_SCORES = {
-    'taiwan': {'score': 25, 'level': 'CRITICO', 'reason': 'Concentrazione 60% produzione mondiale wafer'},
-    'china': {'score': 20, 'level': 'ALTO', 'reason': 'Rischio geopolitico + export controls'},
-    'korea': {'score': 15, 'level': 'MEDIO-ALTO', 'reason': 'Concentrazione Samsung/SK Hynix'},
-    'japan': {'score': 12, 'level': 'MEDIO', 'reason': 'Rischio sismico + invecchiamento fab'},
-    'singapore': {'score': 8, 'level': 'MEDIO-BASSO', 'reason': 'Hub stabile ma piccolo'},
-    'malaysia': {'score': 10, 'level': 'MEDIO', 'reason': 'Hub in crescita'},
-    'usa': {'score': 5, 'level': 'BASSO', 'reason': 'Diversificazione in corso (CHIPS Act)'},
-    'germany': {'score': 3, 'level': 'BASSO', 'reason': 'Hub europeo stabile'},
-    'france': {'score': 3, 'level': 'BASSO', 'reason': 'Hub europeo stabile (ST Crolles)'},
-    'italy': {'score': 3, 'level': 'BASSO', 'reason': 'Hub europeo (ST Catania/Agrate)'},
-    'ireland': {'score': 3, 'level': 'BASSO', 'reason': 'Hub Intel EU'},
-    'israel': {'score': 8, 'level': 'MEDIO-BASSO', 'reason': 'Hub Intel/Tower, rischio regionale'},
+    'taiwan': {'score': 25, 'level': 'CRITICAL', 'reason': '60% concentration of global wafer production'},
+    'china': {'score': 20, 'level': 'HIGH', 'reason': 'Geopolitical risk + export controls'},
+    'korea': {'score': 15, 'level': 'MEDIUM-HIGH', 'reason': 'Samsung/SK Hynix concentration'},
+    'japan': {'score': 12, 'level': 'MEDIUM', 'reason': 'Seismic risk + aging fabs'},
+    'singapore': {'score': 8, 'level': 'MEDIUM-LOW', 'reason': 'Stable but small hub'},
+    'malaysia': {'score': 10, 'level': 'MEDIUM', 'reason': 'Growing hub'},
+    'usa': {'score': 5, 'level': 'LOW', 'reason': 'Diversification in progress (CHIPS Act)'},
+    'germany': {'score': 3, 'level': 'LOW', 'reason': 'Stable European hub'},
+    'france': {'score': 3, 'level': 'LOW', 'reason': 'Stable European hub (ST Crolles)'},
+    'italy': {'score': 3, 'level': 'LOW', 'reason': 'European hub (ST Catania/Agrate)'},
+    'ireland': {'score': 3, 'level': 'LOW', 'reason': 'Intel EU hub'},
+    'israel': {'score': 8, 'level': 'MEDIUM-LOW', 'reason': 'Intel/Tower hub, regional risk'},
 }
 
 # Rischio Backend (assemblaggio/test OSAT) - peso 40% dello score geo
 BACKEND_RISK_SCORES = {
-    'malaysia': {'score': 15, 'level': 'ALTO', 'reason': 'Concentrazione OSAT principale'},
-    'philippines': {'score': 15, 'level': 'ALTO', 'reason': 'Concentrazione OSAT'},
-    'china': {'score': 12, 'level': 'MEDIO-ALTO', 'reason': 'JCET/rischio tariffe'},
-    'taiwan': {'score': 10, 'level': 'MEDIO', 'reason': 'ASE Group, rischio geopolitico'},
-    'korea': {'score': 8, 'level': 'MEDIO-BASSO', 'reason': 'Backend Samsung'},
-    'thailand': {'score': 10, 'level': 'MEDIO', 'reason': 'Hub in crescita'},
-    'vietnam': {'score': 10, 'level': 'MEDIO', 'reason': 'Hub emergente'},
-    'singapore': {'score': 5, 'level': 'BASSO', 'reason': 'Hub stabile'},
-    'usa': {'score': 3, 'level': 'BASSO', 'reason': 'Backend limitato ma sicuro'},
-    'germany': {'score': 2, 'level': 'BASSO', 'reason': 'Backend europeo'},
-    'france': {'score': 2, 'level': 'BASSO', 'reason': 'Backend europeo'},
-    'italy': {'score': 2, 'level': 'BASSO', 'reason': 'Backend europeo'},
+    'malaysia': {'score': 15, 'level': 'HIGH', 'reason': 'Main OSAT concentration'},
+    'philippines': {'score': 15, 'level': 'HIGH', 'reason': 'OSAT concentration'},
+    'china': {'score': 12, 'level': 'MEDIUM-HIGH', 'reason': 'JCET/tariff risk'},
+    'taiwan': {'score': 10, 'level': 'MEDIUM', 'reason': 'ASE Group, geopolitical risk'},
+    'korea': {'score': 8, 'level': 'MEDIUM-LOW', 'reason': 'Samsung backend'},
+    'thailand': {'score': 10, 'level': 'MEDIUM', 'reason': 'Growing hub'},
+    'vietnam': {'score': 10, 'level': 'MEDIUM', 'reason': 'Emerging hub'},
+    'singapore': {'score': 5, 'level': 'LOW', 'reason': 'Stable hub'},
+    'usa': {'score': 3, 'level': 'LOW', 'reason': 'Limited but secure backend'},
+    'germany': {'score': 2, 'level': 'LOW', 'reason': 'European backend'},
+    'france': {'score': 2, 'level': 'LOW', 'reason': 'European backend'},
+    'italy': {'score': 2, 'level': 'LOW', 'reason': 'European backend'},
 }
 
 # Technology Node risk
 TECH_NODE_THRESHOLDS = [
-    {'max_nm': 7, 'score': 25, 'level': 'CRITICO',
-     'reason': 'Solo TSMC/Samsung, nessuna alternativa EU/USA'},
-    {'max_nm': 14, 'score': 20, 'level': 'ALTO',
-     'reason': 'Poche fonderie (TSMC, Samsung, Intel)'},
-    {'max_nm': 28, 'score': 15, 'level': 'MEDIO-ALTO',
-     'reason': 'Fonderie limitate, GlobalFoundries/SMIC parziale'},
-    {'max_nm': 65, 'score': 8, 'level': 'MEDIO',
-     'reason': 'Più fonderie disponibili incluse EU'},
-    {'max_nm': 130, 'score': 5, 'level': 'BASSO',
-     'reason': 'Ampia disponibilità globale'},
-    {'max_nm': float('inf'), 'score': 3, 'level': 'BASSO',
-     'reason': 'Nodi legacy, rischio obsolescenza a lungo termine'},
+    {'max_nm': 7, 'score': 25, 'level': 'CRITICAL',
+     'reason': 'Only TSMC/Samsung, no EU/USA alternative'},
+    {'max_nm': 14, 'score': 20, 'level': 'HIGH',
+     'reason': 'Few foundries (TSMC, Samsung, Intel)'},
+    {'max_nm': 28, 'score': 15, 'level': 'MEDIUM-HIGH',
+     'reason': 'Limited foundries, GlobalFoundries/SMIC partial'},
+    {'max_nm': 65, 'score': 8, 'level': 'MEDIUM',
+     'reason': 'More foundries available including EU'},
+    {'max_nm': 130, 'score': 5, 'level': 'LOW',
+     'reason': 'Wide global availability'},
+    {'max_nm': float('inf'), 'score': 3, 'level': 'LOW',
+     'reason': 'Legacy nodes, long-term obsolescence risk'},
 ]
 
 FRONTEND_WEIGHT = 0.6
@@ -126,14 +126,14 @@ def calculate_geo_risk(component: Dict[str, Any]) -> Dict[str, Any]:
         if not backend_country:
             backend_country = frontend_country
 
-    # Calcola frontend risk
+    # Calculate frontend risk
     frontend_info = FRONTEND_RISK_SCORES.get(frontend_country, {
-        'score': 10, 'level': 'SCONOSCIUTO', 'reason': f'Paese non classificato: {frontend_country}'
+        'score': 10, 'level': 'UNKNOWN', 'reason': f'Unclassified country: {frontend_country}'
     })
 
-    # Calcola backend risk
+    # Calculate backend risk
     backend_info = BACKEND_RISK_SCORES.get(backend_country, {
-        'score': 8, 'level': 'SCONOSCIUTO', 'reason': f'Paese non classificato: {backend_country}'
+        'score': 8, 'level': 'UNKNOWN', 'reason': f'Unclassified country: {backend_country}'
     })
 
     # Score composito
@@ -150,7 +150,7 @@ def calculate_geo_risk(component: Dict[str, Any]) -> Dict[str, Any]:
         factors.append(
             f"FAB FRONTEND {frontend_info['level']}: {frontend_country.title()} - {frontend_info['reason']}"
         )
-        suggestions.append("Valutare fornitori con frontend in EU/USA (CHIPS Act, European Chips Act)")
+        suggestions.append("Evaluate suppliers with frontend in EU/USA (CHIPS Act, European Chips Act)")
     elif frontend_info['score'] >= 10:
         factors.append(
             f"FAB FRONTEND {frontend_info['level']}: {frontend_country.title()} - {frontend_info['reason']}"
@@ -160,21 +160,21 @@ def calculate_geo_risk(component: Dict[str, Any]) -> Dict[str, Any]:
         factors.append(
             f"ASSEMBLY BACKEND {backend_info['level']}: {backend_country.title()} - {backend_info['reason']}"
         )
-        suggestions.append("Considerare OSAT con siti in multiple regioni")
+        suggestions.append("Consider OSAT with sites in multiple regions")
     elif backend_info['score'] >= 8:
         factors.append(
             f"ASSEMBLY BACKEND {backend_info['level']}: {backend_country.title()} - {backend_info['reason']}"
         )
 
-    # Determina livello composito
+    # Determine composite level
     if composite_score >= 20:
-        level = 'CRITICO'
+        level = 'CRITICAL'
     elif composite_score >= 12:
-        level = 'ALTO'
+        level = 'HIGH'
     elif composite_score >= 6:
-        level = 'MEDIO'
+        level = 'MEDIUM'
     else:
-        level = 'BASSO'
+        level = 'LOW'
 
     return {
         'frontend_country': frontend_country,
@@ -203,14 +203,14 @@ def get_technology_node_risk(tech_node: Any) -> Dict[str, Any]:
         Dizionario con score, level, reason
     """
     if not tech_node or (isinstance(tech_node, float) and pd.isna(tech_node)):
-        return {'score': 0, 'level': 'N/A', 'reason': 'Technology node non specificato', 'nm': None}
+        return {'score': 0, 'level': 'N/A', 'reason': 'Technology node not specified', 'nm': None}
 
     # Parsing: accetta "28nm", "28", 28, "7nm", etc.
     tech_str = str(tech_node).lower().replace('nm', '').replace(' ', '')
     try:
         nm_value = float(tech_str)
     except ValueError:
-        return {'score': 0, 'level': 'N/A', 'reason': f'Formato non riconosciuto: {tech_node}', 'nm': None}
+        return {'score': 0, 'level': 'N/A', 'reason': f'Unrecognized format: {tech_node}', 'nm': None}
 
     for threshold in TECH_NODE_THRESHOLDS:
         if nm_value <= threshold['max_nm']:
@@ -221,7 +221,7 @@ def get_technology_node_risk(tech_node: Any) -> Dict[str, Any]:
                 'nm': nm_value,
             }
 
-    return {'score': 3, 'level': 'BASSO', 'reason': 'Nodo legacy', 'nm': nm_value}
+    return {'score': 3, 'level': 'LOW', 'reason': 'Legacy node', 'nm': nm_value}
 
 
 def generate_risk_map_data(components: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

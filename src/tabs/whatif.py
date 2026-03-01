@@ -20,32 +20,32 @@ import streamlit as st
 
 
 def render_tab_simulatore_whatif():
-    """Tab 7: Simulatore What-If - Scenari di Disruption"""
-    st.header("Simulatore What-If - Scenari di Disruption")
+    """Tab 7: What-If Simulator - Disruption Scenarios"""
+    st.header("What-If Simulator - Disruption Scenarios")
     st.markdown("""
-    Questo modulo permette di simulare l'impatto di scenari di disruption
-    sulla supply chain e vedere come cambia il rischio.
+    This module allows you to simulate the impact of disruption scenarios
+    on the supply chain and see how risk changes.
 
-    **Scenari supportati:**
-    - Blocco geografico (es. Taiwan bloccata 4-8 settimane)
-    - Aumento lead time (% su tutti i fornitori)
-    - Interruzione fornitore specifico
+    **Supported scenarios:**
+    - Geographic block (e.g. Taiwan blocked for 4-8 weeks)
+    - Lead time increase (% across all suppliers)
+    - Specific supplier outage
 
-    Il simulatore calcola:
-    - Impatto su buffer stock (quando si esaurisce)
-    - Variazione del rischio complessivo
-    - Impatto finanziario stimato
+    The simulator calculates:
+    - Impact on buffer stock (when it runs out)
+    - Change in overall risk
+    - Estimated financial impact
     """)
 
     # -------------------------------------------------------------------------
-    # VERIFICA DATI
+    # DATA CHECK
     # -------------------------------------------------------------------------
     batch = st.session_state.batch_results
 
     if not batch:
         st.info("""
-        Esegui prima un'**Analisi Multipla** (Tab 2) per caricare i dati della BOM.
-        Il simulatore ha bisogno dei componenti e dei loro rischi calcolati.
+        Run a **Multiple Analysis** (Tab 2) first to load the BOM data.
+        The simulator needs the components and their calculated risks.
         """)
     else:
         components_data = batch['components_data']
@@ -54,14 +54,14 @@ def render_tab_simulatore_whatif():
         col1, col2 = st.columns([2, 1])
 
         # =====================================================================
-        # COLONNA 1: CONFIGURAZIONE SCENARIO
+        # COLUMN 1: SCENARIO CONFIGURATION
         # =====================================================================
         with col1:
-            st.subheader("Configurazione Scenario")
+            st.subheader("Scenario Configuration")
 
             scenario_option = st.radio(
-                "Tipo di Scenario",
-                options=["Predefinito", "Personalizzato"],
+                "Scenario Type",
+                options=["Predefined", "Custom"],
                 horizontal=True,
                 label_visibility="collapsed",
                 key="scenario_option"
@@ -69,15 +69,15 @@ def render_tab_simulatore_whatif():
 
             scenario_config = None
 
-            # ------------------------- SCENARI PREDEFINITI --------------------
-            if scenario_option == "Predefinito":
+            # ------------------------- PREDEFINED SCENARIOS -------------------
+            if scenario_option == "Predefined":
                 predefined = get_predefined_scenarios()
                 scenario_names = [s['name'] for s in predefined]
 
                 selected_name = st.selectbox(
-                    "Seleziona Scenario",
+                    "Select Scenario",
                     options=scenario_names,
-                    help="Scegli tra gli scenari predefiniti",
+                    help="Choose from predefined scenarios",
                     key="predefined_select"
                 )
 
@@ -96,9 +96,9 @@ def render_tab_simulatore_whatif():
 
                 st.info(f"""
                 **Scenario**: {selected_scenario['name']}
-                - Tipo: {selected_scenario.get('type', '')}
-                - Parametro: {param_text}
-                - Durata: {selected_scenario['weeks']} settimane
+                - Type: {selected_scenario.get('type', '')}
+                - Parameter: {param_text}
+                - Duration: {selected_scenario['weeks']} weeks
                 """)
 
                 scenario_config = {
@@ -121,18 +121,18 @@ def render_tab_simulatore_whatif():
 
                 st.session_state.predefined_scenario = scenario_config
 
-            # ------------------------ SCENARI PERSONALIZZATI -------------------
+            # ------------------------ CUSTOM SCENARIOS ------------------------
             else:
-                st.write("**Configurazione Scenario Personalizzato**")
+                st.write("**Custom Scenario Configuration**")
 
                 def _apply_custom(form_data: Dict[str, Any]):
                     st.session_state.custom_scenario = form_data
 
                 with st.form("custom_scenario_form"):
                     scenario_type_label = st.selectbox(
-                        "Tipo Disruption",
+                        "Disruption Type",
                         options=list(SCENARIO_TYPES.values()),
-                        help="Seleziona il tipo di scenario",
+                        help="Select the scenario type",
                         key="custom_type"
                     )
 
@@ -140,16 +140,16 @@ def render_tab_simulatore_whatif():
 
                     if scenario_type_label == "Blocco Paese":
                         country = st.selectbox(
-                            "Paese",
+                            "Country",
                             options=list(COUNTRY_BLOCK_CONFIG.keys()),
-                            help="Seleziona il paese da simulare bloccato",
+                            help="Select the country to simulate as blocked",
                             key="custom_country"
                         )
                         default_weeks = COUNTRY_BLOCK_CONFIG[country]['default_weeks']
                         risk_multiplier = COUNTRY_BLOCK_CONFIG[country]['risk_multiplier']
 
                         weeks = st.slider(
-                            "Durata Blocco (settimane)",
+                            "Block Duration (weeks)",
                             min_value=1, max_value=52,
                             value=default_weeks, step=1,
                             key="custom_weeks_country"
@@ -158,7 +158,7 @@ def render_tab_simulatore_whatif():
                             'type': 'country_block',
                             'country': country,
                             'weeks': weeks,
-                            'description': f"{country} bloccato per {weeks} settimane",
+                            'description': f"{country} blocked for {weeks} weeks",
                             'risk_multiplier': risk_multiplier,
                         }
 
@@ -167,13 +167,13 @@ def render_tab_simulatore_whatif():
                             str(c.get('Supplier Name', '')) for c in components_data
                         )))
                         supplier = st.selectbox(
-                            "Fornitore",
+                            "Supplier",
                             options=suppliers_list,
-                            help="Seleziona il fornitore da simulare interrotto",
+                            help="Select the supplier to simulate as interrupted",
                             key="custom_supplier"
                         )
                         weeks = st.slider(
-                            "Durata Interruzione (settimane)",
+                            "Outage Duration (weeks)",
                             min_value=1, max_value=52, value=4, step=1,
                             key="custom_weeks_supplier"
                         )
@@ -181,17 +181,17 @@ def render_tab_simulatore_whatif():
                             'type': 'supplier_outage',
                             'supplier': supplier,
                             'weeks': weeks,
-                            'description': f"Fornitore {supplier} interrotto per {weeks} settimane",
+                            'description': f"Supplier {supplier} interrupted for {weeks} weeks",
                         }
 
                     elif scenario_type_label == "Aumento Lead Time":
                         increase_percent = st.slider(
-                            "Aumento Lead Time (%)",
+                            "Lead Time Increase (%)",
                             min_value=10, max_value=200, value=50, step=10,
                             key="custom_increase_percent"
                         )
                         weeks = st.slider(
-                            "Durata Aumento (settimane)",
+                            "Increase Duration (weeks)",
                             min_value=1, max_value=52, value=4, step=1,
                             key="custom_weeks_lead"
                         )
@@ -199,14 +199,14 @@ def render_tab_simulatore_whatif():
                             'type': 'lead_time_increase',
                             'increase_percent': increase_percent,
                             'weeks': weeks,
-                            'description': f"Aumento lead time del {increase_percent}% per {weeks} settimane",
+                            'description': f"Lead time increase of {increase_percent}% for {weeks} weeks",
                             'risk_multiplier': 1.5,
                         }
 
                     elif scenario_type_label == "Carenza Materiale Tier-2":
                         material_options = {v['name']: k for k, v in MATERIAL_DATABASE.items()}
                         selected_material_name = st.selectbox(
-                            "Materiale",
+                            "Material",
                             options=list(material_options.keys()),
                             key="custom_material"
                         )
@@ -215,14 +215,14 @@ def render_tab_simulatore_whatif():
                         mat_info = MATERIAL_DATABASE[material_key]
                         countries = list(mat_info['primary_countries'].keys())
                         affected_countries = st.multiselect(
-                            "Paesi Colpiti",
+                            "Affected Countries",
                             options=[c.title() for c in countries],
                             default=[c.title() for c in countries[:2]],
                             key="custom_material_countries"
                         )
 
                         weeks = st.slider(
-                            "Durata Carenza (settimane)",
+                            "Shortage Duration (weeks)",
                             min_value=1, max_value=52, value=4, step=1,
                             key="custom_weeks_material"
                         )
@@ -231,12 +231,12 @@ def render_tab_simulatore_whatif():
                             'material_type': material_key,
                             'affected_countries': [c.lower() for c in affected_countries],
                             'weeks': weeks,
-                            'description': f"Carenza {selected_material_name} per {weeks} settimane",
+                            'description': f"{selected_material_name} shortage for {weeks} weeks",
                             'risk_multiplier': 2.0,
                         }
 
                     st.form_submit_button(
-                        "Applica",
+                        "Apply",
                         type="primary",
                         on_click=_apply_custom,
                         args=(form_data,)
@@ -245,17 +245,17 @@ def render_tab_simulatore_whatif():
                 scenario_config = st.session_state.get('custom_scenario', None)
 
         # =====================================================================
-        # COLONNA 2: FILTRO COMPONENTI E AVVIO SIMULAZIONE
+        # COLUMN 2: COMPONENT FILTER AND RUN SIMULATION
         # =====================================================================
         with col2:
-            st.subheader("Componenti Specifici (Opzionale)")
+            st.subheader("Specific Components (Optional)")
 
             if scenario_config is not None and scenario_config.get('type'):
                 scenario_type = scenario_config['type']
 
                 if scenario_type == 'country_block':
                     country_filter = scenario_config.get('country', '')
-                    st.info(f"Mostrando solo componenti con Frontend/Backend in **{country_filter}**")
+                    st.info(f"Showing only components with Frontend/Backend in **{country_filter}**")
                     filtered_indices = [
                         i for i, c in enumerate(components_data)
                         if _check_affected(c, scenario_config)
@@ -263,7 +263,7 @@ def render_tab_simulatore_whatif():
 
                 elif scenario_type == 'supplier_outage':
                     supplier_filter = scenario_config.get('supplier', '')
-                    st.info(f"Mostrando solo componenti del fornitore **{supplier_filter}**")
+                    st.info(f"Showing only components from supplier **{supplier_filter}**")
                     filtered_indices = [
                         i for i, c in enumerate(components_data)
                         if _check_affected(c, scenario_config)
@@ -280,26 +280,26 @@ def render_tab_simulatore_whatif():
                     for i in filtered_indices
                 ]
                 selected_pn = st.selectbox(
-                    "Componente Specifico (Analizza Tutti)",
-                    options=["Analizza Tutti"] + component_names,
-                    help="Seleziona un componente per vedere dettaglio",
+                    "Specific Component (Analyze All)",
+                    options=["Analyze All"] + component_names,
+                    help="Select a component to see detail",
                     key="component_select"
                 )
 
-                if selected_pn == "Analizza Tutti":
+                if selected_pn == "Analyze All":
                     selected_indices = filtered_indices
                 else:
                     idx_in_filtered = component_names.index(selected_pn)
                     selected_indices = [filtered_indices[idx_in_filtered]]
             else:
-                st.info("Nessun componente affetto da questo scenario")
+                st.info("No components affected by this scenario")
                 selected_indices = []
 
-            if st.button("Esegui Simulazione", type="primary", key="run_simulation"):
+            if st.button("Run Simulation", type="primary", key="run_simulation"):
                 if not scenario_config:
-                    st.error("Per favore, configura uno scenario prima di eseguire la simulazione")
+                    st.error("Please configure a scenario before running the simulation")
                 elif not selected_indices:
-                    st.warning("Seleziona almeno un componente da analizzare")
+                    st.warning("Select at least one component to analyze")
                 else:
                     filtered_components = [components_data[i] for i in selected_indices]
                     filtered_risks = [components_risk[i] for i in selected_indices]
@@ -313,7 +313,7 @@ def render_tab_simulatore_whatif():
                     st.session_state.simulation_result = result
 
         # =====================================================================
-        # RISULTATI
+        # RESULTS
         # =====================================================================
         if 'simulation_result' in st.session_state:
             result = st.session_state.simulation_result
@@ -321,77 +321,77 @@ def render_tab_simulatore_whatif():
             scenario_info = result['scenario_info']
 
             st.markdown("---")
-            st.subheader("Risultato Simulazione")
+            st.subheader("Simulation Results")
 
             col_result1, col_result2 = st.columns(2)
 
             with col_result1:
                 st.markdown(f"""
-                **Tipo**: {scenario_info['description']}
-                **Durata**: {scenario_info['duration_weeks']} settimane
-                **Parametro**: {scenario_info['parameter']}
+                **Type**: {scenario_info['description']}
+                **Duration**: {scenario_info['duration_weeks']} weeks
+                **Parameter**: {scenario_info['parameter']}
                 """)
 
                 st.metric(
-                    "Componenti Affetti",
+                    "Affected Components",
                     f"{summary['affected_count']}/{summary['total_components']}"
                 )
-                st.metric("Componenti Critici", summary['critical_count'])
+                st.metric("Critical Components", summary['critical_count'])
 
             with col_result2:
                 delta = summary['score_change']
                 delta_color = "normal" if delta == 0 else "inverse" if delta < 0 else "off"
 
                 st.metric(
-                    "Rischio Complessivo",
+                    "Overall Risk",
                     f"{summary['avg_adjusted_score']} ({summary['overall_level']})",
                     delta=delta,
                     delta_color=delta_color
                 )
 
-            st.markdown("### Impatto Finanziario")
+            st.markdown("### Financial Impact")
 
             col_fin1, col_fin2, col_fin3 = st.columns(3)
 
             with col_fin1:
                 st.metric(
-                    "Valore BOM a Rischio",
+                    "BOM Value at Risk",
                     f"${summary['total_bom_value']:,.2f}"
                 )
 
             with col_fin2:
                 weeks_lost = summary.get('total_production_lost_weeks', 0)
                 st.metric(
-                    "Produzione Persa",
-                    f"{weeks_lost:.1f} settimane"
+                    "Production Lost",
+                    f"{weeks_lost:.1f} weeks"
                 )
 
             with col_fin3:
                 revenue_loss = summary.get('total_financial_impact', 0)
                 st.metric(
-                    "Impatto Stimato",
+                    "Estimated Impact",
                     f"${revenue_loss:,.2f}"
                 )
 
             if result['impacted_components']:
-                st.markdown("### Dettaglio Componenti Affetti")
+                st.markdown("### Affected Components Detail")
 
                 detail_rows = []
                 for comp in result['impacted_components']:
                     detail_rows.append({
                         'Part Number': comp['part_number'],
-                        'Fornitore': comp['supplier'],
-                        'Score Orig.': comp['original_score'],
-                        'Score Nuovo': comp['adjusted_score'],
-                        'Variazione': comp['score_change'],
-                        'Buffer Orig. (sett)': comp['original_buffer_weeks'],
-                        'Buffer Nuovo (sett)': comp['remaining_buffer_weeks'],
-                        'Sett. Perse': comp['weeks_lost'],
-                        'Impatto $': comp['financial_impact'],
+                        'Supplier': comp['supplier'],
+                        'Orig. Score': comp['original_score'],
+                        'New Score': comp['adjusted_score'],
+                        'Change': comp['score_change'],
+                        'Orig. Buffer (wk)': comp['original_buffer_weeks'],
+                        'New Buffer (wk)': comp['remaining_buffer_weeks'],
+                        'Weeks Lost': comp['weeks_lost'],
+                        'Impact $': comp['financial_impact'],
                     })
 
                 df_detail = pd.DataFrame(detail_rows)
-                df_detail = df_detail.sort_values('Impatto $', ascending=False)
+                df_detail = df_detail.sort_values('Impact $', ascending=False)
 
                 def color_score(val):
                     try:
@@ -408,7 +408,7 @@ def render_tab_simulatore_whatif():
                 st.dataframe(
                     df_detail.style.applymap(
                         color_score,
-                        subset=['Score Orig.', 'Score Nuovo']
+                        subset=['Orig. Score', 'New Score']
                     ),
                     use_container_width=True,
                     hide_index=True
@@ -416,28 +416,28 @@ def render_tab_simulatore_whatif():
 
             critical = result.get('critical_components', [])
             if critical:
-                st.markdown("### Componenti Critici")
-                st.warning("Questi componenti esauriscono il buffer durante la disruption:")
+                st.markdown("### Critical Components")
+                st.warning("These components deplete their buffer during the disruption:")
 
                 for comp in critical[:10]:
-                    depletion = comp['depletion_date'] or 'Immediato'
+                    depletion = comp['depletion_date'] or 'Immediate'
                     st.markdown(f"""
-                    - **{comp['part_number']}** ({comp['supplier']})  
-                      - Esaurisce: {depletion}  
-                      - Sett. Rimanenti: {comp['remaining_buffer_weeks']:.1f}
+                    - **{comp['part_number']}** ({comp['supplier']})
+                      - Depletes: {depletion}
+                      - Remaining Weeks: {comp['remaining_buffer_weeks']:.1f}
                     """)
 
                 if len(critical) > 10:
-                    st.markdown(f"... e altri {len(critical) - 10} componenti")
+                    st.markdown(f"... and {len(critical) - 10} more components")
 
             st.markdown("---")
             st.info("""
-            **Nota**: Per vedere l'impatto su tutta la BOM, esegui una nuova **Analisi Multipla**
-            con questo scenario applicato.
+            **Note**: To see the impact on the entire BOM, run a new **Multiple Analysis**
+            with this scenario applied.
             """)
 
 
 # =============================================================================
-# TAB 8: DASHBOARD ESECUTIVA
+# TAB 8: EXECUTIVE DASHBOARD
 # =============================================================================
 

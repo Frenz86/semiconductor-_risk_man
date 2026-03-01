@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n \"get_alt_sources\\\\|add_alt_source\\\\|remove_alt_source\" src/tabs/*.py src/*.py)",
+      "Bash(grep -n \"analisi_rapida\\\\|analisi_multipla\" src/tabs/*.py)",
+      "Bash(grep -rn \"Memory_Type\\\\|Wireless_Protocol\\\\|OS_Type\\\\|SW_Code\" src/tabs/ src/*.py --include=\"*.py\")",
+      "Bash(python -c \":*)",
+      "Bash(python scripts/create_readme_sheet.py)"
+    ]
+  }
+}

@@ -10,12 +10,12 @@ import streamlit as st
 
 def render_tab_dashboard_esecutiva():
     """Tab 8: Dashboard Esecutiva - One-pager per il management"""
-    st.header("📊 Dashboard Esecutiva")
-    st.markdown("**One-pager con KPI principali per decisioni strategiche**")
+    st.header("📊 Executive Dashboard")
+    st.markdown("**One-pager with main KPIs for strategic decisions**")
 
     batch = st.session_state.batch_results
     if not batch:
-        st.info("Esegui prima un'**Analisi Multipla** (Tab 2) per visualizzare la dashboard.")
+        st.info("Run a **Multiple Analysis** (Tab 2) first to display the dashboard.")
         return
 
     components_data = batch['components_data']
@@ -25,7 +25,7 @@ def render_tab_dashboard_esecutiva():
     # =============================================================================
     # SEZIONE 1: KPI PRINCIPALI
     # =============================================================================
-    st.subheader("KPI Principali")
+    st.subheader("Main KPIs")
 
     # Calcolo KPI
     risks = batch['components_risk']
@@ -71,7 +71,7 @@ def render_tab_dashboard_esecutiva():
         cat = r.get('category', 'N/A')
         level = r['risk_level']
         if cat not in category_risk_matrix:
-            category_risk_matrix[cat] = {'ALTO': 0, 'MEDIO': 0, 'BASSO': 0, 'count': 0}
+            category_risk_matrix[cat] = {'HIGH': 0, 'MEDIUM': 0, 'LOW': 0, 'count': 0}
         category_risk_matrix[cat][level] += 1
         category_risk_matrix[cat]['count'] += 1
 
@@ -81,23 +81,23 @@ def render_tab_dashboard_esecutiva():
     kpi_col1, kpi_col2, kpi_col3, kpi_col4, kpi_col5, kpi_col6 = st.columns(6)
 
     with kpi_col1:
-        st.metric("Rischio Medio", f"{avg_score:.1f}", delta="Basso" if avg_score < 30 else "Medio" if avg_score < 55 else "Alto")
+        st.metric("Average Risk", f"{avg_score:.1f}", delta="Low" if avg_score < 30 else "Medium" if avg_score < 55 else "High")
 
     with kpi_col2:
-        st.metric("Alto Rischio", red_count, delta=f"{red_count}/{len(risks)}")
+        st.metric("High Risk", red_count, delta=f"{red_count}/{len(risks)}")
 
     with kpi_col3:
-        st.metric("Valore BOM", f"${total_bom_value:,.0f}")
+        st.metric("BOM Value", f"${total_bom_value:,.0f}")
 
     with kpi_col4:
-        st.metric("Man-Hours Totali", f"{total_mh:,}h")
+        st.metric("Total Man-Hours", f"{total_mh:,}h")
 
     with kpi_col5:
         st.metric("SPOF", spof_count)
 
     with kpi_col6:
         bom_level = bom_risk.get('risk_level', 'N/A')
-        st.metric("Rischio BOM", bom_level)
+        st.metric("BOM Risk", bom_level)
 
     st.markdown("---")
 
@@ -109,20 +109,20 @@ def render_tab_dashboard_esecutiva():
     with chart_col1:
         # Pie chart distribuzione rischio
         risk_counts = {
-            'Alto (RED)': red_count,
-            'Medio (YELLOW)': yellow_count,
-            'Basso (GREEN)': green_count
+            'High (RED)': red_count,
+            'Medium (YELLOW)': yellow_count,
+            'Low (GREEN)': green_count
         }
         fig_pie = px.pie(
             values=list(risk_counts.values()),
             names=list(risk_counts.keys()),
             color=list(risk_counts.keys()),
             color_discrete_map={
-                'Alto (RED)': '#ff4444',
-                'Medio (YELLOW)': '#ffbb33',
-                'Basso (GREEN)': '#00C851'
+                'High (RED)': '#ff4444',
+                'Medium (YELLOW)': '#ffbb33',
+                'Low (GREEN)': '#00C851'
             },
-            title="Distribuzione Rischio",
+            title="Risk Distribution",
             hole=0.4
         )
         fig_pie.update_traces(textposition='inside', textinfo='percent+label')
@@ -132,20 +132,20 @@ def render_tab_dashboard_esecutiva():
         # Bar chart fornitori a rischio
         if supplier_risk:
             supp_df = pd.DataFrame([
-                {'Fornitore': s, 'Rischio Medio': d['avg'], 'Count': d['count'], 'Red': d['red']}
+                {'Supplier': s, 'Average Risk': d['avg'], 'Count': d['count'], 'Red': d['red']}
                 for s, d in supplier_risk.items()
-            ]).sort_values('Rischio Medio', ascending=False).head(10)
+            ]).sort_values('Average Risk', ascending=False).head(10)
 
-            colors = ['#ff4444' if r >= 55 else '#ffbb33' if r >= 30 else '#00C851' for r in supp_df['Rischio Medio']]
+            colors = ['#ff4444' if r >= 55 else '#ffbb33' if r >= 30 else '#00C851' for r in supp_df['Average Risk']]
             fig_supp = px.bar(
                 supp_df,
-                x='Rischio Medio',
-                y='Fornitore',
+                x='Average Risk',
+                y='Supplier',
                 orientation='h',
-                color='Rischio Medio',
+                color='Average Risk',
                 color_continuous_scale=['#00C851', '#ffbb33', '#ff4444'],
-                title="Top 10 Fornitori per Rischio Medio",
-                text='Rischio Medio'
+                title="Top 10 Suppliers by Average Risk",
+                text='Average Risk'
             )
             fig_supp.update_traces(texttemplate='%{text:.1f}', textposition='auto')
             fig_supp.update_layout(yaxis={'categoryorder': 'total ascending'})
@@ -156,30 +156,30 @@ def render_tab_dashboard_esecutiva():
     # =============================================================================
     # SEZIONE 3: HEAT MAP CATEGORIE x LIVELLO RISCHIO
     # =============================================================================
-    st.subheader("🔥 Heat Map: Categorie x Livello Rischio")
+    st.subheader("🔥 Heat Map: Categories x Risk Level")
 
     if category_risk_matrix:
         heatmap_data = []
         for cat, levels in category_risk_matrix.items():
             total = levels['count']
             heatmap_data.append({
-                'Categoria': cat,
-                'ALTO': levels['ALTO'],
-                'MEDIO': levels['MEDIO'],
-                'BASSO': levels['BASSO'],
-                'Totale': total
+                'Category': cat,
+                'HIGH': levels['HIGH'],
+                'MEDIUM': levels['MEDIUM'],
+                'LOW': levels['LOW'],
+                'Total': total
             })
 
-        df_heatmap = pd.DataFrame(heatmap_data).sort_values('Totale', ascending=False)
+        df_heatmap = pd.DataFrame(heatmap_data).sort_values('Total', ascending=False)
 
-        # Visualizzazione tabellare con colori
+        # Color table display
         def highlight_risk(val, col):
-            if col == 'Categoria' or col == 'Totale':
+            if col == 'Category' or col == 'Total':
                 return ''
             if val > 0:
-                if col == 'ALTO':
+                if col == 'HIGH':
                     return 'background-color: #ff4444; color: white; font-weight: bold;'
-                elif col == 'MEDIO':
+                elif col == 'MEDIUM':
                     return 'background-color: #ffbb33; color: black;'
                 else:
                     return 'background-color: #00C851; color: white;'
@@ -196,7 +196,7 @@ def render_tab_dashboard_esecutiva():
     # =============================================================================
     # SEZIONE 4: TOP 10 RISCHI
     # =============================================================================
-    st.subheader("🚨 Top 10 Componenti a Rischio")
+    st.subheader("🚨 Top 10 Components at Risk")
 
     top10_data = []
     for i, r in enumerate(top_risks, 1):
@@ -213,22 +213,22 @@ def render_tab_dashboard_esecutiva():
         top10_data.append({
             'Rank': i,
             'Part Number': r.get('part_number', 'N/A'),
-            'Fornitore': r.get('supplier', 'N/A'),
+            'Supplier': r.get('supplier', 'N/A'),
             'Score': r['score'],
-            'Livello': r['risk_level'],
+            'Level': r['risk_level'],
             'Lead Time (w)': lead_time,
             'Geo Score': geo.get('composite_score', 0),
             'Switching': sw.get('classification', 'N/A'),
-            'SPOF': 'Sì' if any('solo stabilimento' in f.lower() for f in r['factors']) else 'No'
+            'SPOF': 'Yes' if any('solo stabilimento' in f.lower() for f in r['factors']) else 'No'
         })
 
     df_top10 = pd.DataFrame(top10_data)
 
-    # Colora le righe per livello di rischio
+    # Color rows by risk level
     def color_row(row):
-        if row['Livello'] == 'ALTO':
+        if row['Level'] == 'HIGH':
             return ['background-color: #ff444433'] * len(row)
-        elif row['Livello'] == 'MEDIO':
+        elif row['Level'] == 'MEDIUM':
             return ['background-color: #ffbb3333'] * len(row)
         return [''] * len(row)
 
@@ -240,7 +240,7 @@ def render_tab_dashboard_esecutiva():
     # =============================================================================
     # SEZIONE 4b: ALERT FILIERA COMMERCIALE (v4.0)
     # =============================================================================
-    st.subheader("🔗 Alert Filiera Commerciale")
+    st.subheader("🔗 Commercial Supply Chain Alerts")
 
     # Hidden Single Source
     hidden_spof_list = [
@@ -263,33 +263,33 @@ def render_tab_dashboard_esecutiva():
 
     with filiera_col1:
         if hidden_spof_list:
-            st.error(f"**Hidden Single Source: {len(hidden_spof_list)} componenti**")
+            st.error(f"**Hidden Single Source: {len(hidden_spof_list)} components**")
             st.markdown(
-                "Questi componenti hanno fonti alternative ma condividono lo stesso paese di fab:"
+                "These components have alternative sources but share the same fab country:"
             )
             for r in hidden_spof_list[:5]:
                 hs = r.get('hidden_single_source', {})
                 st.markdown(
                     f"- **{r.get('part_number')}** – {hs.get('overlap_country', '?').title()} "
-                    f"({hs.get('overlap_count', 0)}/{hs.get('total_sources', 0)} fonti)"
+                    f"({hs.get('overlap_count', 0)}/{hs.get('total_sources', 0)} sources)"
                 )
         else:
-            st.success("Nessun Hidden Single Source rilevato")
+            st.success("No Hidden Single Source detected")
 
     with filiera_col2:
         if mono_dist_list:
-            st.warning(f"**Mono-Distributore: {len(mono_dist_list)} componenti**")
+            st.warning(f"**Single-Distributor: {len(mono_dist_list)} components**")
             for r in mono_dist_list[:5]:
                 dist = r.get('distributor_risk', {})
                 st.markdown(
                     f"- **{r.get('part_number')}** → {dist.get('primary_distributor', 'N/A')}"
                 )
         else:
-            st.success("Nessun componente mono-distributore")
+            st.success("No single-distributor components")
 
     with filiera_col3:
         if ems_spof_list:
-            st.warning(f"**EMS ad alto rischio: {len(ems_spof_list)} componenti**")
+            st.warning(f"**High-risk EMS: {len(ems_spof_list)} components**")
             for r in ems_spof_list[:5]:
                 ems = r.get('ems_risk', {})
                 st.markdown(
@@ -297,14 +297,14 @@ def render_tab_dashboard_esecutiva():
                     f"(score {ems.get('ems_score', 0)})"
                 )
         else:
-            st.success("Nessun EMS critico")
+            st.success("No critical EMS")
 
     st.markdown("---")
 
     # =============================================================================
     # SEZIONE 5: RIEPILOGO AZIONI RACCOMANDATE
     # =============================================================================
-    st.subheader("✅ Azioni Raccomandate per Priorità")
+    st.subheader("✅ Recommended Actions by Priority")
 
     # Raggruppa suggerimenti per priorità
     urgent_actions = []
@@ -329,63 +329,63 @@ def render_tab_dashboard_esecutiva():
     action_col1, action_col2, action_col3 = st.columns(3)
 
     with action_col1:
-        st.markdown("### 🔴 Urgenti")
+        st.markdown("### 🔴 Urgent")
         if urgent_actions:
             for action in urgent_actions[:5]:
                 st.markdown(f"- {action}")
         else:
-            st.info("Nessuna azione urgente")
+            st.info("No urgent actions")
 
     with action_col2:
-        st.markdown("### 🟠 Alta Priorità")
+        st.markdown("### 🟠 High Priority")
         if high_priority_actions:
             for action in high_priority_actions[:5]:
                 st.markdown(f"- {action}")
         else:
-            st.info("Nessuna azione alta priorità")
+            st.info("No high-priority actions")
 
     with action_col3:
-        st.markdown("### 🟡 Media Priorità")
+        st.markdown("### 🟡 Medium Priority")
         if medium_priority_actions:
             for action in medium_priority_actions[:5]:
                 st.markdown(f"- {action}")
         else:
-            st.info("Nessuna azione media priorità")
+            st.info("No medium-priority actions")
 
     st.markdown("---")
 
     # =============================================================================
     # SEZIONE 6: TREND TEMPORE (simulato - base per futuro sviluppo)
     # =============================================================================
-    st.subheader("📈 Trend Rischio nel Tempo")
+    st.subheader("📈 Risk Trend Over Time")
 
     st.info("""
-    **Nota**: Il trend storico richiede il salvataggio delle analisi nel tempo.
-    Questa sezione mostrerà l'evoluzione del rischio della BOM nelle diverse versioni.
+    **Note**: The historical trend requires saving analyses over time.
+    This section will show the evolution of BOM risk across different versions.
 
-    *Per abilitare questa funzionalità, implementare il salvataggio storico delle analisi.*
+    *To enable this feature, implement historical analysis saving.*
     """)
 
     # Mostra solo la situazione corrente come baseline
     col_trend1, col_trend2, col_trend3 = st.columns(3)
 
     with col_trend1:
-        st.markdown("**Baseline Attuale**")
-        st.metric("Data", pd.Timestamp.now().strftime('%Y-%m-%d'))
-        st.metric("Score Medio", f"{avg_score:.1f}")
-        st.metric("Componenti Critici", red_count)
+        st.markdown("**Current Baseline**")
+        st.metric("Date", pd.Timestamp.now().strftime('%Y-%m-%d'))
+        st.metric("Average Score", f"{avg_score:.1f}")
+        st.metric("Critical Components", red_count)
 
     with col_trend2:
-        st.markdown("**Obiettivo -3 mesi**")
+        st.markdown("**Target -3 months**")
         target_reduction = avg_score * 0.85  # -15%
         st.metric("Target Score", f"{target_reduction:.1f}", "-15%")
-        st.metric("Target Critici", max(0, red_count - red_count // 2))
+        st.metric("Target Critical", max(0, red_count - red_count // 2))
 
     with col_trend3:
-        st.markdown("**Obiettivo -6 mesi**")
+        st.markdown("**Target -6 months**")
         target_reduction_6m = avg_score * 0.7  # -30%
         st.metric("Target Score", f"{target_reduction_6m:.1f}", "-30%")
-        st.metric("Target Critici", max(0, red_count * 2 // 3))
+        st.metric("Target Critical", max(0, red_count * 2 // 3))
 
     st.markdown("---")
 

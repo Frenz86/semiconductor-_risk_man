@@ -55,14 +55,14 @@ CERTIFICATION_MULTIPLIERS = {
 
 # Soglie di classificazione redesign
 REDESIGN_THRESHOLDS = [
-    {'max_hours': 100, 'classification': 'TRIVIALE', 'color': 'GREEN',
-     'description': 'Componente facilmente sostituibile'},
-    {'max_hours': 500, 'classification': 'MODERATO', 'color': 'YELLOW',
-     'description': 'Sostituzione richiede pianificazione'},
-    {'max_hours': 2000, 'classification': 'COMPLESSO', 'color': 'ORANGE',
-     'description': 'Sostituzione richiede progetto dedicato'},
-    {'max_hours': float('inf'), 'classification': 'CRITICO', 'color': 'RED',
-     'description': 'Sostituzione equivale a redesign completo'},
+    {'max_hours': 100, 'classification': 'TRIVIAL', 'color': 'GREEN',
+     'description': 'Component easily replaceable'},
+    {'max_hours': 500, 'classification': 'MODERATE', 'color': 'YELLOW',
+     'description': 'Replacement requires planning'},
+    {'max_hours': 2000, 'classification': 'COMPLEX', 'color': 'ORANGE',
+     'description': 'Replacement requires a dedicated project'},
+    {'max_hours': float('inf'), 'classification': 'CRITICAL', 'color': 'RED',
+     'description': 'Replacement is equivalent to a full redesign'},
 ]
 
 # Ore-uomo per settimana di qualifica
@@ -116,7 +116,7 @@ def calculate_switching_cost(component: Dict[str, Any]) -> Dict[str, Any]:
             - qualification_hours: ore per qualifica
             - certification_multiplier: moltiplicatore certificazione
             - total_switching_hours: totale ore-uomo
-            - classification: TRIVIALE/MODERATO/COMPLESSO/CRITICO
+            - classification: TRIVIAL/MODERATE/COMPLEX/CRITICAL
             - breakdown: dettaglio dei costi
     """
     # --- SW Porting ---
@@ -163,7 +163,7 @@ def calculate_switching_cost(component: Dict[str, Any]) -> Dict[str, Any]:
     total_hours = base_hours * cert_multiplier
 
     # --- Classification ---
-    classification = 'TRIVIALE'
+    classification = 'TRIVIAL'
     color = 'GREEN'
     description = ''
     for threshold in REDESIGN_THRESHOLDS:
@@ -183,13 +183,13 @@ def calculate_switching_cost(component: Dict[str, Any]) -> Dict[str, Any]:
         })
     if qualification_hours > 0:
         breakdown.append({
-            'item': f'Qualifica ({weeks_qualify:.0f} settimane)',
+            'item': f'Qualification ({weeks_qualify:.0f} weeks)',
             'hours': round(qualification_hours, 1),
         })
     if cert_multiplier > 1.0:
         overhead = total_hours - base_hours
         breakdown.append({
-            'item': f'Overhead Certificazione ({certification}, x{cert_multiplier})',
+            'item': f'Certification Overhead ({certification}, x{cert_multiplier})',
             'hours': round(overhead, 1),
         })
 
@@ -200,28 +200,28 @@ def calculate_switching_cost(component: Dict[str, Any]) -> Dict[str, Any]:
 
         if proprietary == 'Y':
             total_hours = 200
-            classification = 'MODERATO'
+            classification = 'MODERATE'
             color = 'YELLOW'
-            description = 'Componente proprietario (stima minima)'
-            breakdown.append({'item': 'Stima minima (proprietario)', 'hours': 200})
+            description = 'Proprietary component (minimum estimate)'
+            breakdown.append({'item': 'Minimum estimate (proprietary)', 'hours': 200})
         elif 'mcu' in category or 'mpu' in category:
             total_hours = 80
-            classification = 'TRIVIALE'
+            classification = 'TRIVIAL'
             color = 'GREEN'
-            description = 'Stima minima per processore'
-            breakdown.append({'item': 'Stima minima (processore)', 'hours': 80})
+            description = 'Minimum estimate for processor'
+            breakdown.append({'item': 'Minimum estimate (processor)', 'hours': 80})
         elif 'passive' in category or 'connector' in category:
             total_hours = 8
-            classification = 'TRIVIALE'
+            classification = 'TRIVIAL'
             color = 'GREEN'
-            description = 'Componente passivo/connettore'
-            breakdown.append({'item': 'Sostituzione diretta', 'hours': 8})
+            description = 'Passive/connector component'
+            breakdown.append({'item': 'Direct replacement', 'hours': 8})
 
     return {
         'sw_porting_hours': round(sw_porting_hours, 1),
         'qualification_hours': round(qualification_hours, 1),
         'certification_multiplier': cert_multiplier,
-        'certification_name': certification if certification else 'Nessuna',
+        'certification_name': certification if certification else 'None',
         'total_switching_hours': round(total_hours, 1),
         'classification': classification,
         'color': color,
@@ -237,7 +237,7 @@ def estimate_redesign_risk(component: Dict[str, Any]) -> str:
     Restituisce la classificazione del rischio di redesign.
 
     Returns:
-        'TRIVIALE', 'MODERATO', 'COMPLESSO', o 'CRITICO'
+        'TRIVIAL', 'MODERATE', 'COMPLEX', or 'CRITICAL'
     """
     result = calculate_switching_cost(component)
     return result['classification']

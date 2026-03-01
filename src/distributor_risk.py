@@ -108,7 +108,7 @@ def calculate_distributor_risk(
             'primary_distributor': '',
             'distributor_count': 0,
             'factors': [],
-            'suggestions': ['Definire il canale distributivo per questo componente in Gestione Database → Distributori'],
+            'suggestions': ['Define the distribution channel for this component in Database Management → Distributors'],
             'breakdown': [],
         }
 
@@ -137,16 +137,16 @@ def calculate_distributor_risk(
     n_dist = len(distributor_list)
     if n_dist == 1 and not secondary:
         mono_score = 10
-        factors.append(f"🚚 CRITICO: Mono-distributore ({primary_name}) - nessun canale alternativo")
-        suggestions.append("Qualificare un secondo distributore come backup")
+        factors.append(f"🚚 CRITICAL: Mono-distributor ({primary_name}) - no alternative channel")
+        suggestions.append("Qualify a second distributor as backup")
     elif n_dist <= 2 and not secondary:
         mono_score = 5
-        factors.append(f"🚚 ALTO: Solo {n_dist} distributori, nessuno secondario qualificato")
-        suggestions.append("Aggiungere distributore secondario qualificato")
+        factors.append(f"🚚 HIGH: Only {n_dist} distributors, none qualified as secondary")
+        suggestions.append("Add a qualified secondary distributor")
     else:
         mono_score = 0
         if len(secondary) >= 1:
-            factors.append(f"✅ OK: {n_dist} distributori ({len(secondary)} secondari qualificati)")
+            factors.append(f"✅ OK: {n_dist} distributors ({len(secondary)} qualified secondary)")
     score += mono_score
     breakdown.append({'factor': f'Mono-distributor (n={n_dist})', 'score': mono_score})
 
@@ -161,18 +161,18 @@ def calculate_distributor_risk(
 
     if stock_f <= 0:
         stock_score = 8
-        factors.append(f"📦 CRITICO: Nessun dato stock distributore {primary_name}")
-        suggestions.append("Richiedere dati stock al distributore primario")
+        factors.append(f"📦 CRITICAL: No stock data for distributor {primary_name}")
+        suggestions.append("Request stock data from primary distributor")
     elif stock_f < lt * 0.5:
         stock_score = 8
-        factors.append(f"📦 CRITICO: Stock distributore ({stock_f:.1f} sett.) < 50% del lead time ({lt} sett.)")
-        suggestions.append(f"Negoziare VMI o buffer dedicato con {primary_name}")
+        factors.append(f"📦 CRITICAL: Distributor stock ({stock_f:.1f} wks) < 50% of lead time ({lt} wks)")
+        suggestions.append(f"Negotiate VMI or dedicated buffer with {primary_name}")
     elif stock_f < lt:
         stock_score = 4
-        factors.append(f"📦 ALTO: Stock distributore ({stock_f:.1f} sett.) inferiore al lead time ({lt} sett.)")
+        factors.append(f"📦 HIGH: Distributor stock ({stock_f:.1f} wks) below lead time ({lt} wks)")
     elif stock_f >= lt * 2:
         stock_score = -2  # Bonus
-        factors.append(f"✅ MITIGATO: Stock distributore ampio ({stock_f:.1f} sett. = {stock_f/lt:.1f}x lead time)")
+        factors.append(f"✅ MITIGATED: Large distributor stock ({stock_f:.1f} wks = {stock_f/lt:.1f}x lead time)")
     else:
         stock_score = 0
     score += stock_score
@@ -186,10 +186,10 @@ def calculate_distributor_risk(
     score += fin_score
     breakdown.append({'factor': f'Financial Health ({fin_health})', 'score': fin_score})
     if fin_score >= 6:
-        factors.append(f"💰 ALTO: Salute finanziaria distributore rating {fin_health}")
-        suggestions.append(f"Monitorare stabilità finanziaria di {primary_name}")
+        factors.append(f"💰 HIGH: Distributor financial health rating {fin_health}")
+        suggestions.append(f"Monitor financial stability of {primary_name}")
     elif fin_score >= 2:
-        factors.append(f"💰 MEDIO: Salute finanziaria distributore {fin_health}")
+        factors.append(f"💰 MEDIUM: Distributor financial health {fin_health}")
 
     # =========================================================================
     # 4. LEAD TIME MARKUP (max 5 punti)
@@ -202,11 +202,11 @@ def calculate_distributor_risk(
 
     if markup_f >= 8:
         markup_score = 5
-        factors.append(f"⏱️ ALTO: Lead time markup distributore +{markup_f} settimane")
-        suggestions.append("Negoziare accordo VMI per ridurre lead time markup")
+        factors.append(f"⏱️ HIGH: Distributor lead time markup +{markup_f} weeks")
+        suggestions.append("Negotiate VMI agreement to reduce lead time markup")
     elif markup_f >= 4:
         markup_score = 3
-        factors.append(f"⏱️ MEDIO: Lead time markup distributore +{markup_f} settimane")
+        factors.append(f"⏱️ MEDIUM: Distributor lead time markup +{markup_f} weeks")
     elif markup_f >= 2:
         markup_score = 1
     else:
@@ -223,20 +223,20 @@ def calculate_distributor_risk(
     score += geo_score
     breakdown.append({'factor': f'Geo Risk ({dist_country.title() if dist_country else "N/A"})', 'score': geo_score})
     if geo_score >= 5:
-        factors.append(f"🌏 ALTO: Distributore primario in {dist_country.title()} - rischio geopolitico")
+        factors.append(f"🌏 HIGH: Primary distributor in {dist_country.title()} - geopolitical risk")
 
     # Cap a 25
     score = max(0, min(25, score))
 
-    # Classificazione
+    # Classification
     if score >= 18:
-        level = 'CRITICO'
+        level = 'CRITICAL'
     elif score >= 10:
-        level = 'ALTO'
+        level = 'HIGH'
     elif score >= 5:
-        level = 'MEDIO'
+        level = 'MEDIUM'
     else:
-        level = 'BASSO'
+        level = 'LOW'
 
     return {
         'distributor_score': score,

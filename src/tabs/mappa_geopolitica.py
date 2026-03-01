@@ -9,11 +9,11 @@ import streamlit as st
 
 
 def render_tab_mappa_geopolitica():
-    """Tab 4: Mappa Rischio Geopolitico Frontend/Backend"""
-    st.header("Mappa Rischio Geopolitico Frontend/Backend")
+    """Tab 4: Geopolitical Risk Map Frontend/Backend"""
+    st.header("Geopolitical Risk Map Frontend/Backend")
     st.markdown("""
-    Questa mappa mostra la distribuzione geografica degli stabilimenti di fabbricazione
-    distinguendo tra **Frontend** (fabbricazione wafer) e **Backend** (assemblaggio/test OSAT).
+    This map shows the geographic distribution of manufacturing facilities,
+    distinguishing between **Frontend** (wafer fabrication) and **Backend** (assembly/test OSAT).
     """)
 
     batch = st.session_state.batch_results
@@ -21,7 +21,7 @@ def render_tab_mappa_geopolitica():
         components_data = batch['components_data']
         components_risk = batch['components_risk']
 
-        # Mappa con Folium
+        # Map with Folium
         try:
             import folium
             from streamlit_folium import st_folium
@@ -37,9 +37,9 @@ def render_tab_mappa_geopolitica():
 
                     popup_html = f"""
                     <b>{marker['label']}</b><br/>
-                    Tipo: {'Frontend (Wafer Fab)' if marker['type'] == 'frontend' else 'Backend (Assembly/Test)'}<br/>
-                    Paese: {marker['country']}<br/>
-                    Rischio: {marker['risk_level']} ({marker['risk_score']}/25)
+                    Type: {'Frontend (Wafer Fab)' if marker['type'] == 'frontend' else 'Backend (Assembly/Test)'}<br/>
+                    Country: {marker['country']}<br/>
+                    Risk: {marker['risk_level']} ({marker['risk_score']}/25)
                     """
 
                     folium.Marker(
@@ -51,12 +51,12 @@ def render_tab_mappa_geopolitica():
 
                 st_folium(m, width=None, height=500)
             else:
-                st.info("Nessun dato geografico disponibile per la mappatura")
+                st.info("No geographic data available for mapping")
         except ImportError:
-            st.warning("Librerie `folium` e `streamlit-folium` necessarie per la mappa. Esegui: `pip install folium streamlit-folium`")
+            st.warning("Libraries `folium` and `streamlit-folium` required for the map. Run: `pip install folium streamlit-folium`")
 
-        # Tabella rischio per regione
-        st.subheader("Analisi Rischio per Regione")
+        # Risk table by region
+        st.subheader("Risk Analysis by Region")
 
         geo_table = []
         for i, risk in enumerate(components_risk):
@@ -64,7 +64,7 @@ def render_tab_mappa_geopolitica():
             tech = risk.get('tech_node_risk', {})
             geo_table.append({
                 'Part Number': risk.get('part_number', 'N/A'),
-                'Fornitore': risk.get('supplier', 'N/A'),
+                'Supplier': risk.get('supplier', 'N/A'),
                 'Frontend': geo.get('frontend_country', 'N/A').title(),
                 'Frontend Risk': geo.get('frontend_level', 'N/A'),
                 'Backend': geo.get('backend_country', 'N/A').title(),
@@ -79,7 +79,7 @@ def render_tab_mappa_geopolitica():
             df_geo = df_geo.sort_values('Geo Score', ascending=False)
             st.dataframe(df_geo, use_container_width=True, hide_index=True)
 
-            # Grafico a barre
+            # Bar chart
             fig_geo = go.Figure()
             colors = ['#ff4444' if row['Geo Score'] >= 20 else '#ffbb33' if row['Geo Score'] >= 12 else '#00C851'
                       for _, row in df_geo.iterrows()]
@@ -92,19 +92,19 @@ def render_tab_mappa_geopolitica():
                 textposition='auto'
             ))
             fig_geo.update_layout(
-                title="Geo Risk Score per Componente (Frontend/Backend Composito)",
-                xaxis_title="Componente",
+                title="Geo Risk Score per Component (Frontend/Backend Composite)",
+                xaxis_title="Component",
                 yaxis_title="Geo Score",
                 showlegend=False
             )
-            fig_geo.add_hline(y=20, line_dash="dash", line_color="red", annotation_text="CRITICO")
-            fig_geo.add_hline(y=12, line_dash="dash", line_color="orange", annotation_text="ALTO")
+            fig_geo.add_hline(y=20, line_dash="dash", line_color="red", annotation_text="CRITICAL")
+            fig_geo.add_hline(y=12, line_dash="dash", line_color="orange", annotation_text="HIGH")
             st.plotly_chart(fig_geo, use_container_width=True)
     else:
-        st.info("Esegui prima un'**Analisi Multipla** (Tab 2) per visualizzare la mappa geopolitica.")
+        st.info("Run a **Multiple Analysis** (Tab 2) first to display the geopolitical map.")
 
 
 # =============================================================================
-# TAB 5: COSTI DI SWITCHING
+# TAB 5: SWITCHING COSTS
 # =============================================================================
 

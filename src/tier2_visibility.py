@@ -21,7 +21,7 @@ from typing import Dict, List, Any, Optional
 
 MATERIAL_DATABASE = {
     'neon_gas': {
-        'name': 'Neon Gas (Litografia)',
+        'name': 'Neon Gas (Lithography)',
         'category': 'Specialty Gas',
         'primary_countries': {
             'ukraine': 0.40, 'russia': 0.30, 'korea': 0.15,
@@ -526,49 +526,49 @@ def calculate_tier2_risk(
     factors = []
     suggestions = []
 
-    # 1. Concentrazione materiale (0-10)
+    # 1. Material concentration (0-10)
     if max_country_share >= 0.80:
         score += 10
-        factors.append(f"Concentrazione Tier-2 estrema: {max_country_share:.0%} da un singolo paese")
+        factors.append(f"Extreme Tier-2 concentration: {max_country_share:.0%} from a single country")
     elif max_country_share >= 0.60:
         score += 7
-        factors.append(f"Concentrazione Tier-2 alta: {max_country_share:.0%} da un singolo paese")
+        factors.append(f"High Tier-2 concentration: {max_country_share:.0%} from a single country")
     elif max_country_share >= 0.40:
         score += 4
-        factors.append(f"Concentrazione Tier-2 moderata: {max_country_share:.0%} da un singolo paese")
+        factors.append(f"Moderate Tier-2 concentration: {max_country_share:.0%} from a single country")
     elif max_country_share >= 0.20:
         score += 2
 
-    # 2. Numero materiali critici (0-5)
+    # 2. Number of critical materials (0-5)
     if critical_count >= 3:
         score += 5
-        factors.append(f"{critical_count} materiali critici/non-sostituibili")
+        factors.append(f"{critical_count} critical/non-substitutable materials")
     elif critical_count >= 2:
         score += 3
-        factors.append(f"{critical_count} materiali critici")
+        factors.append(f"{critical_count} critical materials")
     elif critical_count >= 1:
         score += 1
 
-    # 3. Overlap geopolitico frontend/tier2 (0-5)
+    # 3. Frontend/Tier-2 geopolitical overlap (0-5)
     if geo_overlap_score >= 3:
         score += 5
-        factors.append("Alto overlap geo: frontend e Tier-2 nello stesso paese")
-        suggestions.append("Diversificare fonti Tier-2 su paesi diversi dal frontend")
+        factors.append("High geo overlap: frontend and Tier-2 in the same country")
+        suggestions.append("Diversify Tier-2 sources across countries different from the frontend")
     elif geo_overlap_score >= 2:
         score += 3
-        factors.append("Overlap geo: frontend e Tier-2 parzialmente sovrapposti")
+        factors.append("Geo overlap: frontend and Tier-2 partially overlapping")
     elif geo_overlap_score >= 1:
         score += 1
 
-    # 4. Penalita' nodo avanzato (0-5)
+    # 4. Advanced node penalty (0-5)
     node_bucket = _classify_tech_node(tech_node)
     if node_bucket == 'advanced':
         score += 5
-        factors.append("Nodo avanzato (<= 7nm): supply chain Tier-2 molto concentrata")
-        suggestions.append("Valutare alternative su nodi maturi dove possibile")
+        factors.append("Advanced node (<= 7nm): highly concentrated Tier-2 supply chain")
+        suggestions.append("Evaluate alternatives on mature nodes where possible")
     elif node_bucket == 'mainstream':
         score += 3
-        factors.append("Nodo mainstream (10-28nm): buona disponibilita' Tier-2")
+        factors.append("Mainstream node (10-28nm): good Tier-2 availability")
     elif node_bucket == 'mature':
         score += 1
 
@@ -576,12 +576,12 @@ def calculate_tier2_risk(
     for bn in sorted(bottlenecks, key=lambda x: x['concentration'], reverse=True)[:3]:
         if bn['concentration'] >= 0.70:
             suggestions.append(
-                f"Qualificare fonte alternativa per {bn['name']} "
-                f"(attualmente {bn['concentration']:.0%} da {bn['dominant_country'].title()})"
+                f"Qualify an alternative source for {bn['name']} "
+                f"(currently {bn['concentration']:.0%} from {bn['dominant_country'].title()})"
             )
         elif bn['concentration'] >= 0.50:
             suggestions.append(
-                f"Monitorare disponibilita' {bn['name']} ({bn['dominant_country'].title()})"
+                f"Monitor availability of {bn['name']} ({bn['dominant_country'].title()})"
             )
 
     return {
@@ -765,23 +765,23 @@ def _generate_recommendations(
         pct = bn['affected_count'] / total_components * 100 if total_components > 0 else 0
         if bn['max_concentration'] >= 0.70 and pct >= 50:
             recs.append(
-                f"**CRITICO**: {bn['name']} interessa {bn['affected_count']}/{total_components} componenti "
-                f"({pct:.0f}%) con {bn['max_concentration']:.0%} concentrazione in "
-                f"{bn['dominant_country'].title()}. Qualificare fornitore alternativo urgente."
+                f"**CRITICAL**: {bn['name']} affects {bn['affected_count']}/{total_components} components "
+                f"({pct:.0f}%) with {bn['max_concentration']:.0%} concentration in "
+                f"{bn['dominant_country'].title()}. Qualify an alternative supplier urgently."
             )
         elif bn['max_concentration'] >= 0.50 and pct >= 30:
             recs.append(
-                f"**ALTO**: {bn['name']} impatta {bn['affected_count']} componenti con alta concentrazione "
+                f"**HIGH**: {bn['name']} impacts {bn['affected_count']} components with high concentration "
                 f"({bn['dominant_country'].title()} {bn['max_concentration']:.0%}). "
-                f"Valutare dual-sourcing."
+                f"Evaluate dual-sourcing."
             )
         elif bn['criticality'] == 'CRITICAL':
             recs.append(
-                f"**MEDIO**: {bn['name']} e' un materiale critico non facilmente sostituibile. "
-                f"Monitorare disponibilita' e build buffer strategico."
+                f"**MEDIUM**: {bn['name']} is a critical material not easily substitutable. "
+                f"Monitor availability and build strategic buffer."
             )
 
-    # Raccomandazioni basate sulla concentrazione per paese
+    # Recommendations based on country concentration
     for country, data in sorted(
         country_conc.items(),
         key=lambda x: x[1]['total_exposure'],
@@ -789,13 +789,13 @@ def _generate_recommendations(
     )[:3]:
         if data['component_count'] >= total_components * 0.5:
             recs.append(
-                f"**GEOPOLITICO**: {country.title()} impatta {data['material_count']} materiali "
-                f"e {data['component_count']} componenti. Una disruption in questo paese "
-                f"avrebbe impatto sistemico sulla BOM."
+                f"**GEOPOLITICAL**: {country.title()} impacts {data['material_count']} materials "
+                f"and {data['component_count']} components. A disruption in this country "
+                f"would have a systemic impact on the BOM."
             )
 
     if not recs:
-        recs.append("Nessun rischio Tier-2/3 significativo identificato per questa BOM.")
+        recs.append("No significant Tier-2/3 risks identified for this BOM.")
 
     return recs
 

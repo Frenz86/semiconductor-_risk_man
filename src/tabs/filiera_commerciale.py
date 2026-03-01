@@ -2,6 +2,7 @@
 filiera_commerciale.py — Tab: render_tab_filiera_commerciale
 """
 
+from alternative_engine import find_compatible_alternatives, check_shortage_impact
 from distributor_risk import analyze_bom_distributor_risk, simulate_distributor_stockout
 from ems_risk import analyze_bom_ems_risk
 import pandas as pd
@@ -10,14 +11,14 @@ import streamlit as st
 
 def render_tab_filiera_commerciale():
     """Tab Filiera Commerciale: EMS risk, Distributor risk, Hidden Single Source."""
-    st.header("Filiera Commerciale")
+    st.header("Commercial Supply Chain")
     st.markdown(
-        "Analisi del canale distributivo e del terzista EMS — livelli nascosti della supply chain."
+        "Analysis of the distribution channel and EMS contract manufacturer — hidden layers of the supply chain."
     )
 
     batch = st.session_state.batch_results
     if not batch:
-        st.info("Esegui prima un'**Analisi Multipla** (Tab 2) per caricare i dati della BOM.")
+        st.info("Run a **Multiple Analysis** (Tab 2) first to load the BOM data.")
         return
 
     components_data = batch['components_data']
@@ -33,23 +34,24 @@ def render_tab_filiera_commerciale():
     ems_analysis = analyze_bom_ems_risk(components_data, ems_by_name)
     dist_analysis = analyze_bom_distributor_risk(components_data, all_part_distributors)
 
-    tab_ems, tab_dist, tab_spof, tab_sim = st.tabs([
-        "EMS Risk", "Distributori", "Hidden Single Source", "Simulatore Stock-Out"
+    tab_ems, tab_dist, tab_spof, tab_sim, tab_alt = st.tabs([
+        "EMS Risk", "Distributors", "Hidden Single Source", "Stock-Out Simulator",
+        "Smart Alternatives"
     ])
 
     # =========================================================================
     # SUB-TAB: EMS RISK
     # =========================================================================
     with tab_ems:
-        st.subheader("Rischio EMS (Electronics Manufacturing Services)")
+        st.subheader("EMS Risk (Electronics Manufacturing Services)")
 
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Componenti via EMS", ems_analysis['ems_components_count'])
+            st.metric("Components via EMS", ems_analysis['ems_components_count'])
         with col2:
-            st.metric("Score Medio EMS", f"{ems_analysis['avg_ems_score']:.1f}/30")
+            st.metric("Avg EMS Score", f"{ems_analysis['avg_ems_score']:.1f}/30")
         with col3:
-            st.metric("Componenti Critici EMS", len(ems_analysis['critical_ems']))
+            st.metric("Critical EMS Components", len(ems_analysis['critical_ems']))
 
         st.markdown("---")
 
@@ -60,15 +62,15 @@ def render_tab_filiera_commerciale():
                 ems_rows.append({
                     'Part Number': r.get('part_number', ''),
                     'EMS': r.get('ems_name', 'N/A'),
-                    'Paese': r.get('ems_country', 'N/A'),
-                    'Score EMS': r.get('ems_score', 0),
-                    'Livello': r.get('ems_level', 'N/A'),
-                    'Profilo': 'Sì' if r.get('has_profile') else 'Stima',
+                    'Country': r.get('ems_country', 'N/A'),
+                    'EMS Score': r.get('ems_score', 0),
+                    'Level': r.get('ems_level', 'N/A'),
+                    'Profile': 'Yes' if r.get('has_profile') else 'Estimated',
                 })
         if ems_rows:
-            df_ems = pd.DataFrame(ems_rows).sort_values('Score EMS', ascending=False)
+            df_ems = pd.DataFrame(ems_rows).sort_values('EMS Score', ascending=False)
             def _color_ems(row):
-                score = row['Score EMS']
+                score = row['EMS Score']
                 if score >= 20:
                     return ['background-color: #ff444433'] * len(row)
                 elif score >= 12:
@@ -76,11 +78,11 @@ def render_tab_filiera_commerciale():
                 return [''] * len(row)
             st.dataframe(df_ems.style.apply(_color_ems, axis=1), use_container_width=True, hide_index=True)
         else:
-            st.info("Nessun componente usa EMS (o campo EMS_Used non impostato)")
+            st.info("No component uses EMS (or EMS_Used field not set)")
 
         if ems_analysis['shared_ems_risks']:
             st.markdown("---")
-            st.subheader("EMS Condivisi (SPOF Potenziale)")
+            st.subheader("Shared EMS (Potential SPOF)")
             for shared in ems_analysis['shared_ems_risks']:
                 badge = "🔴 Single-site" if shared['is_single_site'] else f"🔵 {shared['backup_sites']} backup"
                 st.warning(
@@ -92,17 +94,17 @@ def render_tab_filiera_commerciale():
     # SUB-TAB: DISTRIBUTORI
     # =========================================================================
     with tab_dist:
-        st.subheader("Rischio Distributore")
+        st.subheader("Distributor Risk")
 
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("Componenti con Distributore", len([r for r in dist_analysis['components_distributor'] if r['has_distributors']]))
+            st.metric("Components with Distributor", len([r for r in dist_analysis['components_distributor'] if r['has_distributors']]))
         with col2:
-            st.metric("Score Medio Distributore", f"{dist_analysis['avg_distributor_score']:.1f}/25")
+            st.metric("Avg Distributor Score", f"{dist_analysis['avg_distributor_score']:.1f}/25")
         with col3:
-            st.metric("Mono-Distributore", len(dist_analysis['mono_distributor_pns']))
+            st.metric("Single-Distributor", len(dist_analysis['mono_distributor_pns']))
         with col4:
-            st.metric("Senza Distributore", len(dist_analysis['no_distributor_pns']))
+            st.metric("No Distributor", len(dist_analysis['no_distributor_pns']))
 
         st.markdown("---")
 
@@ -111,10 +113,10 @@ def render_tab_filiera_commerciale():
         for r in dist_analysis['components_distributor']:
             dist_rows.append({
                 'Part Number': r.get('part_number', ''),
-                'Distributore Primario': r.get('primary_distributor', 'N/A'),
-                'N. Distributori': r.get('distributor_count', 0),
+                'Primary Distributor': r.get('primary_distributor', 'N/A'),
+                'No. Distributors': r.get('distributor_count', 0),
                 'Score': r.get('distributor_score', 0),
-                'Livello': r.get('distributor_level', 'N/A') if r.get('has_distributors') else '—',
+                'Level': r.get('distributor_level', 'N/A') if r.get('has_distributors') else '—',
                 'Stock Coverage (w)': r.get('stock_coverage_weeks', 0),
                 'LT Markup (w)': r.get('lead_time_markup_weeks', 0),
             })
@@ -131,7 +133,7 @@ def render_tab_filiera_commerciale():
 
         if dist_analysis['top_shared_distributors']:
             st.markdown("---")
-            st.subheader("Distributori Condivisi (SPOF Potenziale)")
+            st.subheader("Shared Distributors (Potential SPOF)")
             for shared in dist_analysis['top_shared_distributors']:
                 icon = "🔴 SPOF" if shared['is_spof'] else "🟡"
                 st.warning(
@@ -142,7 +144,7 @@ def render_tab_filiera_commerciale():
         if dist_analysis['no_distributor_pns']:
             st.markdown("---")
             st.info(
-                f"**{len(dist_analysis['no_distributor_pns'])} PN senza distributore registrato**: "
+                f"**{len(dist_analysis['no_distributor_pns'])} PN with no registered distributor**: "
                 + ", ".join(dist_analysis['no_distributor_pns'][:8])
                 + (" …" if len(dist_analysis['no_distributor_pns']) > 8 else "")
             )
@@ -153,9 +155,9 @@ def render_tab_filiera_commerciale():
     with tab_spof:
         st.subheader("Hidden Single Source Detection")
         st.markdown("""
-        Un componente ha **hidden single source** quando tutte le sue fonti alternative
-        (inclusa la primaria) convergono sullo stesso paese di fabbricazione frontend.
-        Avere 3 fornitori tutti con fab in Taiwan non diversifica il rischio geopolitico.
+        A component has a **hidden single source** when all its alternative sources
+        (including the primary) converge on the same frontend manufacturing country.
+        Having 3 suppliers all with fabs in Taiwan does not diversify geopolitical risk.
         """)
 
         hidden_components = [
@@ -165,12 +167,12 @@ def render_tab_filiera_commerciale():
 
         if not hidden_components:
             st.success(
-                "Nessun hidden single source rilevato nella BOM attuale. "
-                "Aggiungi fonti alternative nel tab Gestione Database → Fonti Alternative "
-                "per abilitare il rilevamento."
+                "No hidden single source detected in the current BOM. "
+                "Add alternative sources in the Database Management tab → Alternative Sources "
+                "to enable detection."
             )
         else:
-            st.error(f"**{len(hidden_components)} componenti con hidden single source**")
+            st.error(f"**{len(hidden_components)} components with hidden single source**")
 
             for r in hidden_components:
                 hs = r.get('hidden_single_source', {})
@@ -183,14 +185,14 @@ def render_tab_filiera_commerciale():
 
                 with st.expander(f"⚠️ {pn} — {level} (score +{score}) — {overlap_country}"):
                     st.markdown(f"""
-                    - **Paese convergente:** {overlap_country}
-                    - **Fonti su quel paese:** {overlap_count} di {total_sources}
-                    - **Livello:** {level}
-                    - **Suggerimento:** Qualificare un fornitore alternativo con fab in paese diverso da {overlap_country}
+                    - **Converging country:** {overlap_country}
+                    - **Sources in that country:** {overlap_count} of {total_sources}
+                    - **Level:** {level}
+                    - **Recommendation:** Qualify an alternative supplier with a fab in a country other than {overlap_country}
                     """)
 
         st.markdown("---")
-        st.subheader("Tutte le Fonti Alternative Registrate")
+        st.subheader("All Registered Alternative Sources")
         all_alt = db.get_all_alt_sources()
         if all_alt:
             rows = []
@@ -200,18 +202,18 @@ def render_tab_filiera_commerciale():
             st.dataframe(pd.DataFrame(rows), use_container_width=True)
         else:
             st.info(
-                "Nessuna fonte alternativa nel DB. "
-                "Aggiungile in Gestione Database → Fonti Alternative per attivare il rilevamento."
+                "No alternative sources in the DB. "
+                "Add them in Database Management → Alternative Sources to enable detection."
             )
 
     # =========================================================================
     # SUB-TAB: SIMULATORE STOCK-OUT DISTRIBUTORE
     # =========================================================================
     with tab_sim:
-        st.subheader("Simulatore Stock-Out Distributore")
+        st.subheader("Distributor Stock-Out Simulator")
         st.markdown(
-            "Simula l'impatto di uno stock-out su un distributore specifico: "
-            "quali componenti restano scoperti e per quante settimane."
+            "Simulate the impact of a stock-out on a specific distributor: "
+            "which components are left uncovered and for how many weeks."
         )
 
         # Ottieni lista distributori dalla BOM corrente
@@ -221,20 +223,20 @@ def render_tab_filiera_commerciale():
                 active_distributors.add(r['primary_distributor'])
 
         if not active_distributors:
-            st.info("Nessun distributore associato alla BOM. Aggiungi distribuzioni in Gestione Database → Distributori.")
+            st.info("No distributor associated with the BOM. Add distributors in Database Management → Distributors.")
             return
 
         col1, col2, col3 = st.columns(3)
         with col1:
-            target_dist = st.selectbox("Distributore da simulare", sorted(active_distributors))
+            target_dist = st.selectbox("Distributor to simulate", sorted(active_distributors))
         with col2:
-            stockout_weeks = st.slider("Settimane di stock-out", 1, 26, 4)
+            stockout_weeks = st.slider("Stock-out weeks", 1, 26, 4)
         with col3:
             sim_run_rate = st.number_input(
-                "Run Rate (PCB/sett.)", min_value=1, value=st.session_state.run_rate
+                "Run Rate (PCB/week)", min_value=1, value=st.session_state.run_rate
             )
 
-        if st.button("Esegui Simulazione", type="primary"):
+        if st.button("Run Simulation", type="primary"):
             sim_result = simulate_distributor_stockout(
                 components_data, all_part_distributors,
                 target_dist, stockout_weeks, sim_run_rate
@@ -243,11 +245,11 @@ def render_tab_filiera_commerciale():
             summary = sim_result['summary']
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("Componenti Impattati", summary['total_affected'])
+                st.metric("Impacted Components", summary['total_affected'])
             with col2:
-                st.metric("Componenti Critici", summary['total_critical'], help="Buffer esaurito prima della fine dello stock-out")
+                st.metric("Critical Components", summary['total_critical'], help="Buffer exhausted before the end of the stock-out")
             with col3:
-                st.metric("Settimane Perse (media)", f"{summary['avg_weeks_lost']:.1f}")
+                st.metric("Lost Weeks (avg)", f"{summary['avg_weeks_lost']:.1f}")
 
             if sim_result['affected_components']:
                 affected_df = pd.DataFrame(sim_result['affected_components'])
@@ -260,5 +262,107 @@ def render_tab_filiera_commerciale():
                     use_container_width=True, hide_index=True
                 )
             else:
-                st.success(f"Nessun componente impattato da uno stock-out di {target_dist}")
+                st.success(f"No component impacted by a stock-out of {target_dist}")
 
+    # =========================================================================
+    # SUB-TAB: ALTERNATIVE INTELLIGENTI (v5.0)
+    # =========================================================================
+    with tab_alt:
+        st.subheader("Smart Alternatives — Compatibility Graph")
+        st.markdown(
+            "Shows compatible alternatives for each component taking into account "
+            "supported interfaces, market shortages and porting effort."
+        )
+
+        market_shortage = db.get_market_shortage()
+        all_alt_sources = db.get_all_alt_sources()
+
+        # Alert shortage globale
+        if market_shortage:
+            shortage_items = [f"**{k}** ({v})" for k, v in market_shortage.items() if v != 'Available']
+            if shortage_items:
+                st.error("⚠️ Active market shortages: " + " · ".join(shortage_items))
+
+        # Selezione PN
+        pn_list = [str(c.get('Part Number', '')) for c in components_data if c.get('Part Number')]
+        if not pn_list:
+            st.info("No components available.")
+        else:
+            selected_pn = st.selectbox("Select Part Number", pn_list, key="alt_pn_select")
+            pn_data = next((c for c in components_data if str(c.get('Part Number', '')).upper() == selected_pn.upper()), {})
+            alt_sources = all_alt_sources.get(selected_pn.upper(), [])
+
+            # Info interfacce supportate dal PN
+            supported = pn_data.get('Supported_Interfaces', '')
+            if supported and str(supported) not in ('', 'nan'):
+                st.info(f"Interfaces supported by **{selected_pn}**: `{supported}`")
+            else:
+                st.caption("The `Supported_Interfaces` field is not filled for this PN — add it in Database Management to enable compatibility matching.")
+
+            # Shortage check per questo PN
+            shortage_info = check_shortage_impact(pn_data, market_shortage)
+            if shortage_info['affected']:
+                ifaces = ', '.join(shortage_info['affected_interfaces'])
+                st.warning(f"⚠️ This component uses **{ifaces}** — currently in **{shortage_info['severity']}** status")
+                for note in shortage_info.get('shortage_notes', []):
+                    st.caption(f"  • {note}")
+
+            # Tabella alternative
+            if alt_sources:
+                alternatives = find_compatible_alternatives(selected_pn, pn_data, alt_sources, market_shortage)
+                if alternatives:
+                    st.markdown(f"**{len(alternatives)} alternative(s) found:**")
+                    _render_alternatives_table_filiera(alternatives)
+                else:
+                    st.info("Alternatives present but no compatibility data. Fill in `Interface_Type` in Database Management.")
+            else:
+                st.info(f"No alternative source registered for **{selected_pn}**. Add them in Database Management → Alternative Sources.")
+
+        # Panoramica shortage per tutta la BOM
+        st.markdown("---")
+        st.subheader("Shortage Overview — Full BOM")
+        shortage_rows = []
+        for comp in components_data:
+            pn = str(comp.get('Part Number', ''))
+            si = check_shortage_impact(comp, market_shortage)
+            if si['affected']:
+                shortage_rows.append({
+                    'Part Number': pn,
+                    'Affected Interfaces': ', '.join(si['affected_interfaces']),
+                    'Severity': si['severity'],
+                    'Available Alternatives': len(all_alt_sources.get(pn.upper(), [])),
+                })
+        if shortage_rows:
+            df_sh = pd.DataFrame(shortage_rows).sort_values('Severity', ascending=False)
+            def _color_severity(row):
+                s = row['Severity']
+                if s == 'Critical': return ['background-color: #ff444433'] * len(row)
+                if s == 'Shortage': return ['background-color: #ff888833'] * len(row)
+                if s == 'Tight':    return ['background-color: #ffbb3333'] * len(row)
+                return [''] * len(row)
+            st.dataframe(df_sh.style.apply(_color_severity, axis=1), use_container_width=True, hide_index=True)
+        else:
+            st.success("No BOM component is impacted by active market shortages.")
+
+
+def _render_alternatives_table_filiera(alternatives: list) -> None:
+    """Renderizza tabella alternative per la Filiera Commerciale."""
+    _AVAIL_ICONS = {'Available': '🟢', 'Tight': '🟡', 'Shortage': '🔴', 'Critical': '🔴', 'EOL': '⚫'}
+    rows = []
+    for alt in alternatives:
+        score = alt['compat_score']
+        bar = '█' * int(score * 8) + '░' * (8 - int(score * 8))
+        iface_flag = '✅' if alt['interface_exact'] else ('⚠️' if alt['interface_family'] else '—')
+        avail = alt.get('availability') or alt.get('market_severity', '')
+        avail_icon = _AVAIL_ICONS.get(avail, '❓')
+        rows.append({
+            'Supplier':      alt['supplier'],
+            'Compat.':       f"{bar} {score:.2f}",
+            'Interface':     f"{iface_flag} {alt['interface_type']}",
+            'Drop-In':       alt['drop_in'],
+            'Porting (h)':   alt['porting_hours'] if alt['porting_hours'] else '—',
+            'Availability':  f"{avail_icon} {avail}" if avail else '—',
+            'Fab Country':   alt['frontend_country'],
+            'Qualification': alt['qualification'],
+        })
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)

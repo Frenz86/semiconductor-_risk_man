@@ -34,9 +34,9 @@ EMS_FINANCIAL_SCORES = {
 # Punteggio per utilizzo capacità (%)
 # Alta utilization = rischio di overflow e ritardi
 EMS_CAPACITY_THRESHOLDS = [
-    (95, 15, 'CRITICO: EMS a piena capacità (>95%) - alto rischio ritardi'),
-    (85, 8,  'ALTO: EMS quasi saturo (>85%)'),
-    (70, 3,  'MEDIO: EMS a buona capacità (>70%)'),
+    (95, 15, 'CRITICAL: EMS at full capacity (>95%) - high risk of delays'),
+    (85, 8,  'HIGH: EMS nearly saturated (>85%)'),
+    (70, 3,  'MEDIUM: EMS at good capacity (>70%)'),
     (0,  0,  ''),
 ]
 
@@ -153,8 +153,8 @@ def calculate_ems_risk(
         factors = []
         suggestions = []
         if geo_score > 0:
-            factors.append(f"🏭 EMS in {ems_location.title()} (profilo dettagliato non disponibile)")
-            suggestions.append(f"Inserire profilo EMS '{ems_name}' in Gestione Database → EMS Providers")
+            factors.append(f"🏭 EMS in {ems_location.title()} (detailed profile not available)")
+            suggestions.append(f"Add EMS profile '{ems_name}' in Database Management → EMS Providers")
 
         return {
             'ems_score': min(30, geo_score),
@@ -164,7 +164,7 @@ def calculate_ems_risk(
             'has_profile': False,
             'factors': factors,
             'suggestions': suggestions,
-            'breakdown': [{'factor': 'Geo (stima da location)', 'score': geo_score}],
+            'breakdown': [{'factor': 'Geo (estimate from location)', 'score': geo_score}],
         }
 
     # =========================================================================
@@ -183,10 +183,10 @@ def calculate_ems_risk(
     score += fin_score
     breakdown.append({'factor': f'Financial Health ({fin_health})', 'score': fin_score})
     if fin_score >= 8:
-        factors.append(f"💰 ALTO: Salute finanziaria EMS rating {fin_health}")
-        suggestions.append("Valutare EMS alternativo con rating finanziario superiore")
+        factors.append(f"💰 HIGH: EMS financial health rating {fin_health}")
+        suggestions.append("Evaluate an alternative EMS with a higher financial rating")
     elif fin_score >= 3:
-        factors.append(f"💰 MEDIO: Salute finanziaria EMS rating {fin_health}")
+        factors.append(f"💰 MEDIUM: EMS financial health rating {fin_health}")
 
     # 2. UTILIZZO CAPACITÀ (max 15 punti)
     capacity = _safe_get(ems_provider_data, 'Capacity_Utilization_Pct', 70)
@@ -207,7 +207,7 @@ def calculate_ems_risk(
     if cap_label:
         factors.append(f"⚙️ {cap_label}")
         if cap_score >= 8:
-            suggestions.append("Negoziare capacità dedicata o qualificare EMS alternativo")
+            suggestions.append("Negotiate dedicated capacity or qualify an alternative EMS")
 
     # 3. SITI DI BACKUP (max 12 punti)
     backup_sites = _safe_get(ems_provider_data, 'Backup_Sites_Count', 0)
@@ -217,15 +217,15 @@ def calculate_ems_risk(
         backup_n = 0
 
     if backup_n >= EMS_BACKUP_GOOD_THRESHOLD:
-        backup_score = -2  # Bonus: buona resilienza
-        factors.append(f"✅ MITIGATO: EMS ha {backup_n} siti di backup (-2 punti)")
+        backup_score = -2  # Bonus: good resilience
+        factors.append(f"✅ MITIGATED: EMS has {backup_n} backup sites (-2 pts)")
     else:
         backup_score = EMS_BACKUP_SCORES.get(min(backup_n, 2), 2)
         if backup_score >= 12:
-            factors.append("🏭 CRITICO: EMS senza siti di backup (single-site)")
-            suggestions.append("Richiedere accordo di business continuity o qualificare secondo EMS")
+            factors.append("🏭 CRITICAL: EMS with no backup sites (single-site)")
+            suggestions.append("Request business continuity agreement or qualify a second EMS")
         elif backup_score >= 6:
-            factors.append(f"🏭 ALTO: EMS con solo {backup_n} sito di backup")
+            factors.append(f"🏭 HIGH: EMS with only {backup_n} backup site")
 
     score += backup_score
     breakdown.append({'factor': f'Backup Sites ({backup_n})', 'score': backup_score})
@@ -237,10 +237,10 @@ def calculate_ems_risk(
     frontend = str(_safe_get(component_data, 'Frontend_Country', '') or '').lower().strip()
     if frontend and ems_country.lower().strip() == frontend:
         geo_score += 5
-        factors.append(f"🌏 ALTO: EMS nello stesso paese del Frontend ({ems_country.title()}) - concentrazione geografica")
-        suggestions.append("Considerare EMS in paese diverso per diversificazione geografica")
+        factors.append(f"🌏 HIGH: EMS in the same country as Frontend ({ems_country.title()}) - geographic concentration")
+        suggestions.append("Consider EMS in a different country for geographic diversification")
     elif geo_score > 0:
-        factors.append(f"🌏 MEDIO: EMS in {ems_country.title()} - rischio geo moderato")
+        factors.append(f"🌏 MEDIUM: EMS in {ems_country.title()} - moderate geo risk")
 
     score += geo_score
     breakdown.append({'factor': f'Geo Risk ({ems_country.title()})', 'score': geo_score})
@@ -253,13 +253,13 @@ def calculate_ems_risk(
     if component_auto_grade and component_auto_grade.upper() not in ('', 'NONE', 'N/A'):
         if 'IATF16949' not in ems_certs and 'IATF' not in ' '.join(ems_certs):
             cert_gap_score += 8
-            factors.append("📋 CRITICO: Componente automotive ma EMS non certificato IATF16949")
-            suggestions.append("Richiedere certificazione IATF16949 all'EMS o qualificare EMS automotive-certified")
+            factors.append("📋 CRITICAL: Automotive component but EMS not IATF16949 certified")
+            suggestions.append("Request IATF16949 certification from EMS or qualify an automotive-certified EMS")
 
     if 'ISO9001' not in ems_certs and not any('ISO9001' in c for c in ems_certs):
         cert_gap_score += 3
-        factors.append("📋 MEDIO: EMS privo di certificazione ISO9001 base")
-        suggestions.append("Verificare sistema qualità EMS")
+        factors.append("📋 MEDIUM: EMS lacking basic ISO9001 certification")
+        suggestions.append("Verify EMS quality management system")
 
     score += cert_gap_score
     breakdown.append({'factor': 'Certification Gap', 'score': cert_gap_score})
@@ -273,7 +273,7 @@ def calculate_ems_risk(
 
     if years_n < 5:
         score += 5
-        factors.append(f"🏢 MEDIO: EMS con soli {years_n} anni di attività - track record limitato")
+        factors.append(f"🏢 MEDIUM: EMS with only {years_n} years in business - limited track record")
     elif years_n >= 20:
         score = max(0, score - 1)  # Piccolo bonus per EMS storico
 
@@ -282,15 +282,15 @@ def calculate_ems_risk(
     # Cap a 30 punti
     score = max(0, min(30, score))
 
-    # Classificazione
+    # Classification
     if score >= 20:
-        level = 'CRITICO'
+        level = 'CRITICAL'
     elif score >= 12:
-        level = 'ALTO'
+        level = 'HIGH'
     elif score >= 6:
-        level = 'MEDIO'
+        level = 'MEDIUM'
     else:
-        level = 'BASSO'
+        level = 'LOW'
 
     return {
         'ems_score': score,

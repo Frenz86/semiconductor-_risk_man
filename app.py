@@ -113,11 +113,11 @@ def show_login_page():
 
     st.markdown('<div class="login-container">', unsafe_allow_html=True)
     st.markdown('<h1 class="login-title">🔌 Supply Chain Platform</h1>', unsafe_allow_html=True)
-    st.markdown("### Effettua il login per continuare")
+    st.markdown("### Log in to continue")
 
     with st.form("login_form"):
-        username = st.text_input("Username", placeholder="Inserisci username")
-        password = st.text_input("Password", type="password", placeholder="Inserisci password")
+        username = st.text_input("Username", placeholder="Enter username")
+        password = st.text_input("Password", type="password", placeholder="Enter password")
         submit = st.form_submit_button("Login", use_container_width=True)
 
         if submit:
@@ -125,12 +125,12 @@ def show_login_page():
                 if check_login(username, password):
                     st.session_state.logged_in = True
                     st.session_state.username = username
-                    st.success("Login effettuato con successo!")
+                    st.success("Login successful!")
                     st.rerun()
                 else:
-                    st.error("Username o password non validi!")
+                    st.error("Invalid username or password!")
             else:
-                st.warning("Inserisci username e password.")
+                st.warning("Please enter username and password.")
 
     st.markdown("---")
     st.markdown('</div>', unsafe_allow_html=True)
@@ -192,20 +192,20 @@ def get_client_run_rate(client_id):
 
 with st.sidebar:
     # User info e logout
-    st.markdown(f"👤 **Utente:** {st.session_state.username}")
+    st.markdown(f"👤 **User:** {st.session_state.username}")
     if st.button("Logout", use_container_width=True):
         st.session_state.logged_in = False
         st.session_state.username = None
         st.rerun()
 
     st.markdown("---")
-    st.header("Configurazione")
+    st.header("Configuration")
 
     clients = st.session_state.db.get_all_clients()
     if clients:
         client_options = {f"{c['Client_Name']} ({c['Client_ID']})": c['Client_ID'] for c in clients}
         selected = st.selectbox(
-            "Seleziona Cliente",
+            "Select Client",
             options=list(client_options.keys()),
             index=list(client_options.values()).index(st.session_state.current_client) if st.session_state.current_client else 0
         )
@@ -214,11 +214,11 @@ with st.sidebar:
         if st.session_state.run_rate != get_client_run_rate(st.session_state.current_client):
             st.session_state.run_rate = get_client_run_rate(st.session_state.current_client)
     else:
-        st.warning("Nessun cliente trovato. Vai su 'Gestione Database' per aggiungerne uno.")
+        st.warning("No clients found. Go to 'Database Management' to add one.")
         st.session_state.current_client = None
 
     st.session_state.run_rate = st.number_input(
-        "Run Rate (PCB/settimana)",
+        "Run Rate (PCB/week)",
         min_value=1,
         value=st.session_state.run_rate,
         step=100,
@@ -226,19 +226,19 @@ with st.sidebar:
     )
 
     st.markdown("---")
-    st.header("Legenda Rischio")
-    st.markdown('<div class="risk-red">ALTO (>=55 punti)</div>', unsafe_allow_html=True)
-    st.markdown('<div class="risk-yellow">MEDIO (30-54 punti)</div>', unsafe_allow_html=True)
-    st.markdown('<div class="risk-green">BASSO (<30 punti)</div>', unsafe_allow_html=True)
+    st.header("Risk Legend")
+    st.markdown('<div class="risk-red">HIGH (>=55 points)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="risk-yellow">MEDIUM (30-54 points)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="risk-green">LOW (<30 points)</div>', unsafe_allow_html=True)
 
     st.markdown("---")
     st.header("Database Stats")
     stats = st.session_state.db.get_stats()
     st.metric("Part Numbers", stats['total_part_numbers'])
-    st.metric("Clienti", stats['total_clients'])
+    st.metric("Clients", stats['total_clients'])
 
     st.markdown("---")
-    st.header("Esportazione")
+    st.header("Export")
     if st.session_state.get('batch_results'):
         from pdf_export import show_export_button
 
@@ -249,30 +249,30 @@ with st.sidebar:
             key="export_sidebar"
         )
     else:
-        st.info("Esegui prima un'Analisi Multipla")
+        st.info("Run a Multiple Analysis first")
 
 # =============================================================================
 # HEADER
 # =============================================================================
 
 st.title("Supply Chain Resilience Platform")
-st.markdown("**Analisi deterministica del rischio con dipendenze, geo-risk frontend/backend e costi di switching**")
+st.markdown("**Deterministic risk analysis with dependencies, geo-risk frontend/backend and switching costs**")
 
 # =============================================================================
 # TABS
 # =============================================================================
 
 tab_guida, tab_multipla, tab_dashboard, tab_albero, tab_mappa, tab_tier2, tab_switching, tab_filiera, tab_whatif, tab_database = st.tabs([
-    "Guida",
-    "Analisi Multipla",
+    "Guide",
+    "Multiple Analysis",
     "Dashboard",
-    "Albero Dipendenze",
-    "Mappa Geopolitica",
+    "Dependency Tree",
+    "Geopolitical Map",
     "Tier-2/3 Visibility",
-    "Costi di Switching",
-    "Filiera Commerciale",
-    "Simulatore What-If",
-    "Gestione Database",
+    "Switching Costs",
+    "Commercial Supply Chain",
+    "What-If Simulator",
+    "Database Management",
 ])
 
 # =============================================================================

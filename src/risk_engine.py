@@ -26,6 +26,7 @@ from dependency_graph import (
 from tier2_visibility import calculate_tier2_risk
 from ems_risk import calculate_ems_risk
 from distributor_risk import calculate_distributor_risk
+from alternative_engine import find_compatible_alternatives, check_shortage_impact
 
 
 # =============================================================================
@@ -102,11 +103,11 @@ def _calculate_hidden_single_source(
         }
     """
     if not alt_sources or not isinstance(alt_sources, list):
-        return {'has_hidden_spof': False, 'hidden_spof_score': 0, 'overlap_country': '', 'overlap_count': 0, 'total_sources': 0, 'level': 'BASSO', 'factors': []}
+        return {'has_hidden_spof': False, 'hidden_spof_score': 0, 'overlap_country': '', 'overlap_count': 0, 'total_sources': 0, 'level': 'LOW', 'factors': []}
 
     primary_frontend = str(_get_safe_value(row, 'Frontend_Country', '') or '').lower().strip()
     if not primary_frontend:
-        return {'has_hidden_spof': False, 'hidden_spof_score': 0, 'overlap_country': '', 'overlap_count': 0, 'total_sources': 0, 'level': 'BASSO', 'factors': []}
+        return {'has_hidden_spof': False, 'hidden_spof_score': 0, 'overlap_country': '', 'overlap_count': 0, 'total_sources': 0, 'level': 'LOW', 'factors': []}
 
     # Conta quante fonti alternative hanno lo stesso frontend country
     overlap_count = 0
@@ -117,28 +118,28 @@ def _calculate_hidden_single_source(
 
     total_alts = len(alt_sources)
     if overlap_count == 0:
-        return {'has_hidden_spof': False, 'hidden_spof_score': 0, 'overlap_country': primary_frontend, 'overlap_count': 0, 'total_sources': total_alts, 'level': 'BASSO', 'factors': []}
+        return {'has_hidden_spof': False, 'hidden_spof_score': 0, 'overlap_country': primary_frontend, 'overlap_count': 0, 'total_sources': total_alts, 'level': 'LOW', 'factors': []}
 
     # Se tutte (o quasi) le alternative usano lo stesso paese frontend -> hidden SPOF
     overlap_ratio = overlap_count / total_alts if total_alts > 0 else 0
 
     if overlap_ratio >= 1.0:
         score = 12
-        level_label = 'CRITICO'
-        label = f"CRITICO: Multi-sourcing illusorio — tutti i {total_alts + 1} fornitori dipendono da {primary_frontend.title()} (hidden single source)"
+        level_label = 'CRITICAL'
+        label = f"CRITICAL: Illusory multi-sourcing — all {total_alts + 1} suppliers depend on {primary_frontend.title()} (hidden single source)"
         has_hidden = True
     elif overlap_ratio >= 0.67:
         score = 7
-        level_label = 'ALTO'
-        label = f"ALTO: {overlap_count}/{total_alts} fonti alternative in {primary_frontend.title()} — rischio hidden single source"
+        level_label = 'HIGH'
+        label = f"HIGH: {overlap_count}/{total_alts} alternative sources in {primary_frontend.title()} — hidden single source risk"
         has_hidden = True
     elif overlap_ratio >= 0.5:
         score = 4
-        level_label = 'MEDIO'
-        label = f"MEDIO: {overlap_count}/{total_alts} fonti alternative in {primary_frontend.title()}"
+        level_label = 'MEDIUM'
+        label = f"MEDIUM: {overlap_count}/{total_alts} alternative sources in {primary_frontend.title()}"
         has_hidden = False
     else:
-        return {'has_hidden_spof': False, 'hidden_spof_score': 0, 'overlap_country': primary_frontend, 'overlap_count': overlap_count, 'total_sources': total_alts, 'level': 'BASSO', 'factors': []}
+        return {'has_hidden_spof': False, 'hidden_spof_score': 0, 'overlap_country': primary_frontend, 'overlap_count': overlap_count, 'total_sources': total_alts, 'level': 'LOW', 'factors': []}
 
     return {
         'has_hidden_spof': has_hidden,
@@ -158,6 +159,7 @@ def calculate_component_risk(
     ems_provider_data: Optional[Dict[str, Any]] = None,
     distributor_list: Optional[List[Dict[str, Any]]] = None,
     alt_sources: Optional[List[Dict[str, Any]]] = None,
+    market_shortage: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """
     Calcola il rischio per un singolo componente.
@@ -176,7 +178,7 @@ def calculate_component_risk(
         Dizionario con:
             - score: Punteggio di rischio (0-100)
             - color: 'RED', 'YELLOW', o 'GREEN'
-            - risk_level: 'ALTO', 'MEDIO', o 'BASSO'
+            - risk_level: 'HIGH', 'MEDIUM', or 'LOW'
             - factors: Lista di fattori di rischio identificati
             - suggestions: Lista di suggerimenti per mitigazione
             - man_hours: Stima ore-uomo per mitigazione
@@ -204,31 +206,31 @@ def calculate_component_risk(
 
     if geo_score_normalized >= 20:
         score += 25
-        factors.append(f"🌏 CRITICO: Frontend {geo['frontend_country'].title()} ({geo['frontend_level']}) + Backend {geo['backend_country'].title()} ({geo['backend_level']})")
+        factors.append(f"🌏 CRITICAL: Frontend {geo['frontend_country'].title()} ({geo['frontend_level']}) + Backend {geo['backend_country'].title()} ({geo['backend_level']})")
         suggestions.extend(geo['suggestions'])
         man_hours += 40
     elif geo_score_normalized >= 12:
         score += 18
-        factors.append(f"🌏 ALTO: Frontend {geo['frontend_country'].title()} ({geo['frontend_level']}) + Backend {geo['backend_country'].title()} ({geo['backend_level']})")
+        factors.append(f"🌏 HIGH: Frontend {geo['frontend_country'].title()} ({geo['frontend_level']}) + Backend {geo['backend_country'].title()} ({geo['backend_level']})")
         if geo['suggestions']:
             suggestions.extend(geo['suggestions'])
         man_hours += 30
     elif geo_score_normalized >= 6:
         score += 12
-        factors.append(f"🌏 MEDIO: Frontend {geo['frontend_country'].title()} + Backend {geo['backend_country'].title()}")
+        factors.append(f"🌏 MEDIUM: Frontend {geo['frontend_country'].title()} + Backend {geo['backend_country'].title()}")
     else:
-        # Basso rischio geo, ma registra comunque info
+        # Low geo risk, but still record info
         if geo['frontend_country']:
-            factors.append(f"🌏 BASSO: Frontend {geo['frontend_country'].title()} + Backend {geo['backend_country'].title()}")
+            factors.append(f"🌏 LOW: Frontend {geo['frontend_country'].title()} + Backend {geo['backend_country'].title()}")
 
     # Bonus/malus per technology node (aggiunge fino a +5 punti)
     if tech_node['score'] >= 20:
         score += 5
-        factors.append(f"🔬 ALTO: Nodo tecnologico {tech_node.get('nm', '?')}nm - {tech_node['reason']}")
-        suggestions.append("Valutare chip con nodi più maturi o fonderie alternative")
+        factors.append(f"🔬 HIGH: Technology node {tech_node.get('nm', '?')}nm - {tech_node['reason']}")
+        suggestions.append("Evaluate chips on more mature nodes or alternative foundries")
     elif tech_node['score'] >= 10:
         score += 3
-        factors.append(f"🔬 MEDIO: Nodo tecnologico {tech_node.get('nm', '?')}nm - {tech_node['reason']}")
+        factors.append(f"🔬 MEDIUM: Technology node {tech_node.get('nm', '?')}nm - {tech_node['reason']}")
 
     # =====================================================================
     # 2. RISCHIO SINGLE SOURCE (20%) + LEAD TIME SPOF MULTIPLIER
@@ -247,25 +249,25 @@ def calculate_component_risk(
             try:
                 lead_time = int(float(lead_time))
                 if lead_time >= 52:
-                    spof_multiplier = 2.0  # 52+ settimane = doppio rischio
-                    factors.append(f"🏭 CRITICO: Un solo stabilimento produttivo + lead time molto lungo ({lead_time} settimane)")
-                    suggestions.append("URGENTE: Qualificare second source o aumentare buffer stock strategico")
+                    spof_multiplier = 2.0  # 52+ weeks = double risk
+                    factors.append(f"🏭 CRITICAL: Single manufacturing site + very long lead time ({lead_time} weeks)")
+                    suggestions.append("URGENT: Qualify a second source or increase strategic buffer stock")
                 elif lead_time >= 26:
-                    spof_multiplier = 1.5  # 26-51 settimane = +50% rischio
-                    factors.append(f"🏭 CRITICO: Un solo stabilimento produttivo + lead time lungo ({lead_time} settimane)")
-                    suggestions.append("Valutare second source o buffer stock esteso")
+                    spof_multiplier = 1.5  # 26-51 weeks = +50% risk
+                    factors.append(f"🏭 CRITICAL: Single manufacturing site + long lead time ({lead_time} weeks)")
+                    suggestions.append("Evaluate second source or extended buffer stock")
                 elif lead_time >= 16:
-                    spof_multiplier = 1.3  # 16-25 settimane = +30% rischio
-                    factors.append(f"🏭 CRITICO: Un solo stabilimento produttivo + lead time medio-lungo ({lead_time} settimane)")
+                    spof_multiplier = 1.3  # 16-25 weeks = +30% risk
+                    factors.append(f"🏭 CRITICAL: Single manufacturing site + medium-long lead time ({lead_time} weeks)")
                 else:
-                    factors.append("🏭 CRITICO: Un solo stabilimento produttivo")
-                    suggestions.append("Identificare e qualificare second source")
+                    factors.append("🏭 CRITICAL: Single manufacturing site")
+                    suggestions.append("Identify and qualify a second source")
             except (ValueError, TypeError):
-                factors.append("🏭 CRITICO: Un solo stabilimento produttivo")
-                suggestions.append("Identificare e qualificare second source")
+                factors.append("🏭 CRITICAL: Single manufacturing site")
+                suggestions.append("Identify and qualify a second source")
         else:
-            factors.append("🏭 CRITICO: Un solo stabilimento produttivo")
-            suggestions.append("Identificare e qualificare second source")
+            factors.append("🏭 CRITICAL: Single manufacturing site")
+            suggestions.append("Identify and qualify a second source")
 
         score += int(base_spof_score * spof_multiplier)
 
@@ -276,7 +278,7 @@ def calculate_component_risk(
             man_hours += 200
     elif num_plants == 2:
         score += 10
-        factors.append("🏭 MEDIO: Solo 2 stabilimenti produttivi")
+        factors.append("🏭 MEDIUM: Only 2 manufacturing sites")
 
     # =====================================================================
     # 3. RISCHIO LEAD TIME (15%)
@@ -287,17 +289,17 @@ def calculate_component_risk(
             lead_time = int(float(lead_time))
             if lead_time > LEAD_TIME_THRESHOLDS['critical']:
                 score += 15
-                factors.append(f"⏱️ CRITICO: Lead time molto lungo ({lead_time} settimane)")
-                suggestions.append("Negoziare rolling forecast o VMI con il fornitore")
+                factors.append(f"⏱️ CRITICAL: Very long lead time ({lead_time} weeks)")
+                suggestions.append("Negotiate rolling forecast or VMI with supplier")
                 man_hours += 16
             elif lead_time > LEAD_TIME_THRESHOLDS['high']:
                 score += 10
-                factors.append(f"⏱️ ALTO: Lead time lungo ({lead_time} settimane)")
-                suggestions.append("Implementare rolling forecast")
+                factors.append(f"⏱️ HIGH: Long lead time ({lead_time} weeks)")
+                suggestions.append("Implement rolling forecast")
                 man_hours += 8
             elif lead_time > LEAD_TIME_THRESHOLDS['medium']:
                 score += 5
-                factors.append(f"⏱️ MEDIO: Lead time moderato ({lead_time} settimane)")
+                factors.append(f"⏱️ MEDIUM: Moderate lead time ({lead_time} weeks)")
         except (ValueError, TypeError):
             pass
 
@@ -319,18 +321,18 @@ def calculate_component_risk(
 
                 if buffer_coverage_weeks < lead_time:
                     score += 15
-                    factors.append(f"📦 CRITICO: Buffer copre solo {buffer_coverage_weeks:.1f} settimane (lead time: {lead_time})")
-                    suggestions.append(f"Aumentare buffer stock ad almeno {lead_time * 1.5:.0f} settimane di copertura")
+                    factors.append(f"📦 CRITICAL: Buffer covers only {buffer_coverage_weeks:.1f} weeks (lead time: {lead_time})")
+                    suggestions.append(f"Increase buffer stock to at least {lead_time * 1.5:.0f} weeks of coverage")
                     man_hours += 8
                 elif buffer_coverage_weeks < lead_time * 1.5:
                     score += 8
-                    factors.append(f"📦 MEDIO: Buffer copre {buffer_coverage_weeks:.1f} settimane")
+                    factors.append(f"📦 MEDIUM: Buffer covers {buffer_coverage_weeks:.1f} weeks")
                 elif buffer_coverage_weeks >= lead_time * 2:
-                    # Buffer molto ampio -> riduzione rischio proporzionale
+                    # Very large buffer -> proportional risk reduction
                     buffer_bonus = min(5, int((buffer_coverage_weeks / lead_time - 2) * 2))
                     score = max(0, score - buffer_bonus)
                     if buffer_bonus > 0:
-                        factors.append(f"📦 MITIGATO: Buffer ampio ({buffer_coverage_weeks:.1f} settimane, {buffer_coverage_weeks/lead_time:.1f}x lead time) - riduzione {buffer_bonus} punti")
+                        factors.append(f"📦 MITIGATED: Large buffer ({buffer_coverage_weeks:.1f} weeks, {buffer_coverage_weeks/lead_time:.1f}x lead time) - score reduced by {buffer_bonus} pts")
         except (ValueError, TypeError, ZeroDivisionError):
             pass
 
@@ -342,10 +344,10 @@ def calculate_component_risk(
         score += 10
         dependency = _get_safe_value(row, 'In case answer on Column C is Y, Which other device in the BOM is necessary to run the PN on Column B? (e.g. PMIC for MPU, Memory for MPU)', '')
         if dependency:
-            factors.append(f"🔗 ALTO: Dipende da altri componenti ({dependency})")
+            factors.append(f"🔗 HIGH: Depends on other components ({dependency})")
         else:
-            factors.append("🔗 ALTO: Dipende da altri componenti nella BOM")
-        suggestions.append("Verificare allineamento rischio con componenti dipendenti")
+            factors.append("🔗 HIGH: Depends on other components in the BOM")
+        suggestions.append("Verify risk alignment with dependent components")
 
     # =====================================================================
     # 6. RISCHIO PROPRIETARY (10%)
@@ -355,12 +357,12 @@ def calculate_component_risk(
 
     if proprietary and str(proprietary).upper() == 'Y':
         score += 10
-        factors.append("🔒 ALTO: Componente proprietario (no alternative dirette)")
-        suggestions.append("Avviare studio di redesign con componente commodity/standard")
+        factors.append("🔒 HIGH: Proprietary component (no direct alternatives)")
+        suggestions.append("Initiate redesign study with commodity/standard component")
         man_hours += 200
     elif commodity and str(commodity).upper() == 'N':
         score += 5
-        factors.append("🔒 MEDIO: Componente non-commodity")
+        factors.append("🔒 MEDIUM: Non-commodity component")
 
     # =====================================================================
     # 7. RISCHIO CERTIFICAZIONI (5%)
@@ -373,8 +375,8 @@ def calculate_component_risk(
             if int(weeks_qualify) > 12:
                 score += 5
                 cert_suffix = f" - {certification}" if certification else ""
-                factors.append(f"📋 MEDIO: Riqualifica lunga ({int(weeks_qualify)} settimane){cert_suffix}")
-                suggestions.append("Pre-qualificare alternative prima di potenziale EOL")
+                factors.append(f"📋 MEDIUM: Long requalification ({int(weeks_qualify)} weeks){cert_suffix}")
+                suggestions.append("Pre-qualify alternatives before potential EOL")
                 man_hours += 16
         except (ValueError, TypeError):
             pass
@@ -396,12 +398,12 @@ def calculate_component_risk(
     if eol_add > 0:
         score += eol_add
         if eol_add >= 12:
-            factors.append(f"⚠️ CRITICO: Componente {eol_status} - fine vita o last buy")
-            suggestions.append("Avviare urgentemente ricerca alternativa e last-time buy")
+            factors.append(f"⚠️ CRITICAL: Component {eol_status} - end of life or last buy")
+            suggestions.append("Urgently initiate alternative search and last-time buy")
             man_hours += 80
         else:
-            factors.append(f"⚠️ ALTO: Componente {eol_status} - non raccomandato per nuovi design")
-            suggestions.append("Pianificare migrazione a componente attivo")
+            factors.append(f"⚠️ HIGH: Component {eol_status} - not recommended for new designs")
+            suggestions.append("Plan migration to an active component")
             man_hours += 40
 
     # =====================================================================
@@ -413,18 +415,18 @@ def calculate_component_risk(
             alt_sources_n = int(float(alt_sources_raw))
             if alt_sources_n == 0:
                 score += 10
-                factors.append("🚫 CRITICO: Nessuna fonte alternativa sul mercato (sole source)")
-                suggestions.append("Avviare redesign con componente multi-source")
+                factors.append("🚫 CRITICAL: No alternative sources on the market (sole source)")
+                suggestions.append("Initiate redesign with a multi-source component")
                 man_hours += 120
             elif alt_sources_n == 1:
                 score += 5
-                factors.append("🚫 ALTO: Solo 1 fonte alternativa disponibile")
-                suggestions.append("Qualificare la fonte alternativa come second source")
+                factors.append("🚫 HIGH: Only 1 alternative source available")
+                suggestions.append("Qualify the alternative source as a second source")
                 man_hours += 24
             elif alt_sources_n >= 3:
                 bonus = min(3, alt_sources_n - 2)
                 score = max(0, score - bonus)
-                factors.append(f"✅ MITIGATO: {alt_sources_n} fonti alternative disponibili (-{bonus} punti)")
+                factors.append(f"✅ MITIGATED: {alt_sources_n} alternative sources available (-{bonus} pts)")
         except (ValueError, TypeError):
             pass
 
@@ -437,11 +439,11 @@ def calculate_component_risk(
     if fin_add > 0:
         score += fin_add
         if fin_add >= 5:
-            factors.append(f"💰 ALTO: Salute finanziaria fornitore rating {fin_health}")
-            suggestions.append("Monitorare rischio insolvenza/acquisizione fornitore")
+            factors.append(f"💰 HIGH: Supplier financial health rating {fin_health}")
+            suggestions.append("Monitor insolvency/acquisition risk of the supplier")
             man_hours += 16
         else:
-            factors.append(f"💰 MEDIO: Salute finanziaria fornitore rating {fin_health}")
+            factors.append(f"💰 MEDIUM: Supplier financial health rating {fin_health}")
 
     # =====================================================================
     # 11. RISCHIO ALLOCATION STATUS (fino a +10)
@@ -452,12 +454,12 @@ def calculate_component_risk(
     if alloc_add > 0:
         score += alloc_add
         if alloc_add >= 10:
-            factors.append("📉 CRITICO: Componente in allocazione - forniture limitate")
-            suggestions.append("Negoziare volumi garantiti e cercare broker affidabili")
+            factors.append("📉 CRITICAL: Component in allocation - limited supply")
+            suggestions.append("Negotiate guaranteed volumes and seek reliable brokers")
             man_hours += 24
         else:
-            factors.append("📉 ALTO: Componente con fornitura vincolata (constrained)")
-            suggestions.append("Aumentare buffer stock e attivare monitoraggio lead time")
+            factors.append("📉 HIGH: Component with constrained supply")
+            suggestions.append("Increase buffer stock and activate lead time monitoring")
             man_hours += 8
 
     # =====================================================================
@@ -469,12 +471,12 @@ def calculate_component_risk(
             price_increase_f = float(price_increase)
             if price_increase_f > 50:
                 score += 5
-                factors.append(f"💲 ALTO: Ultimo aumento prezzo {price_increase_f:.0f}% - segnale di tensione supply")
-                suggestions.append("Valutare alternative per contenere costi e ridurre dipendenza")
+                factors.append(f"💲 HIGH: Last price increase {price_increase_f:.0f}% - supply tension signal")
+                suggestions.append("Evaluate alternatives to contain costs and reduce dependency")
                 man_hours += 8
             elif price_increase_f > 20:
                 score += 3
-                factors.append(f"💲 MEDIO: Ultimo aumento prezzo {price_increase_f:.0f}%")
+                factors.append(f"💲 MEDIUM: Last price increase {price_increase_f:.0f}%")
         except (ValueError, TypeError):
             pass
 
@@ -485,8 +487,8 @@ def calculate_component_risk(
     advanced_packages = ['WLCSP', 'FCCSP', 'FCBGA', 'FOWLP', 'CHIPLET', '2.5D', '3D']
     if package and any(ap in package for ap in advanced_packages):
         score += 3
-        factors.append(f"📦 MEDIO: Package avanzato ({package}) - poche fonderie capaci")
-        suggestions.append("Verificare disponibilita' capacity nelle fonderie qualificate")
+        factors.append(f"📦 MEDIUM: Advanced package ({package}) - few capable foundries")
+        suggestions.append("Verify capacity availability at qualified foundries")
 
     # =====================================================================
     # 14. MTBF e AUTOMOTIVE GRADE (informativi)
@@ -494,12 +496,12 @@ def calculate_component_risk(
     mtbf = _get_safe_value(row, 'MTBF_Hours', '')
     auto_grade = str(_get_safe_value(row, 'Automotive_Grade', '')).strip()
     if auto_grade and auto_grade.upper() not in ('', 'NONE', 'N/A'):
-        factors.append(f"🚗 INFO: Grado automotive {auto_grade} - supply chain piu' rigida")
+        factors.append(f"🚗 INFO: Automotive grade {auto_grade} - stricter supply chain")
     if mtbf and str(mtbf).strip() != '':
         try:
             mtbf_val = float(mtbf)
             if mtbf_val < 50000:
-                factors.append(f"⏳ INFO: MTBF basso ({mtbf_val:.0f}h) - possibile rischio affidabilita'")
+                factors.append(f"⏳ INFO: Low MTBF ({mtbf_val:.0f}h) - possible reliability risk")
         except (ValueError, TypeError):
             pass
 
@@ -513,7 +515,7 @@ def calculate_component_risk(
         score += tier2_contribution
 
         if tier2_contribution >= 10:
-            factors.append(f"🔗 CRITICO: Alta dipendenza materiali Tier-2/3 (score {tier2_score}/25)")
+            factors.append(f"🔗 CRITICAL: High Tier-2/3 material dependency (score {tier2_score}/25)")
             if tier2_result.get('bottlenecks'):
                 top_bn = tier2_result['bottlenecks'][0]
                 factors.append(
@@ -523,11 +525,11 @@ def calculate_component_risk(
             suggestions.extend(tier2_result.get('suggestions', [])[:2])
             man_hours += 24
         elif tier2_contribution >= 5:
-            factors.append(f"🔗 ALTO: Dipendenza significativa materiali Tier-2/3 (score {tier2_score}/25)")
+            factors.append(f"🔗 HIGH: Significant Tier-2/3 material dependency (score {tier2_score}/25)")
             suggestions.extend(tier2_result.get('suggestions', [])[:1])
             man_hours += 8
         else:
-            factors.append(f"🔗 MEDIO: Dipendenza moderata materiali Tier-2/3")
+            factors.append(f"🔗 MEDIUM: Moderate Tier-2/3 material dependency")
 
     # =====================================================================
     # 16. RISCHIO EMS (fino a +12) - v4.0
@@ -569,10 +571,39 @@ def calculate_component_risk(
         factors.extend(hidden_spof.get('factors', []))
         if hidden_spof.get('has_hidden_spof'):
             suggestions.append(
-                f"Qualificare fornitori alternativi con fab in paesi diversi da "
+                f"Qualify alternative suppliers with fab in countries other than "
                 f"{hidden_spof.get('overlap_country', 'N/A').title()}"
             )
             man_hours += 40
+
+    # =====================================================================
+    # 19. MARKET SHORTAGE PENALTY (fino a +8) - v5.0
+    # =====================================================================
+    shortage_result = check_shortage_impact(row, market_shortage or {})
+    shortage_penalty = 0
+    if shortage_result['affected']:
+        severity = shortage_result['severity']
+        penalty_map = {'Tight': 2, 'Shortage': 5, 'Critical': 8}
+        shortage_penalty = penalty_map.get(severity, 0)
+        if shortage_penalty > 0:
+            score += shortage_penalty
+            ifaces = ', '.join(shortage_result['affected_interfaces'])
+            factors.append(f"⚠️ MARKET SHORTAGE: {ifaces} in state {severity} (+{shortage_penalty} pts)")
+            suggestions.append(
+                f"Evaluate alternatives with interface other than {ifaces} "
+                f"(current shortage: {severity})"
+            )
+            man_hours += 16
+
+    # =====================================================================
+    # ALTERNATIVE COMPATIBILI - v5.0
+    # =====================================================================
+    suggested_alternatives = find_compatible_alternatives(
+        str(row.get('Part Number', '')),
+        row,
+        alt_sources or [],
+        market_shortage or {},
+    )
 
     # Cap score a 100
     score = min(100, score)
@@ -580,13 +611,13 @@ def calculate_component_risk(
     # Determina colore rischio
     if score >= RISK_THRESHOLDS['high']:
         color = "RED"
-        risk_level = "ALTO"
+        risk_level = "HIGH"
     elif score >= RISK_THRESHOLDS['medium']:
         color = "YELLOW"
-        risk_level = "MEDIO"
+        risk_level = "MEDIUM"
     else:
         color = "GREEN"
-        risk_level = "BASSO"
+        risk_level = "LOW"
 
     return {
         'score': score,
@@ -606,6 +637,9 @@ def calculate_component_risk(
         'ems_risk': ems_result,
         'distributor_risk': dist_result,
         'hidden_single_source': hidden_spof,
+        # v5.0 - Compatibility & Shortage
+        'shortage_impact': shortage_result,
+        'suggested_alternatives': suggested_alternatives,
     }
 
 
@@ -645,11 +679,11 @@ def calculate_bom_risk(components_risk: List[Dict[str, Any]], df: Optional[pd.Da
         avg_score = sum(r['score'] for r in components_risk) / len(components_risk)
 
     if avg_score >= RISK_THRESHOLDS['high']:
-        return {'score': avg_score, 'color': 'RED', 'risk_level': 'ALTO'}
+        return {'score': avg_score, 'color': 'RED', 'risk_level': 'HIGH'}
     elif avg_score >= RISK_THRESHOLDS['medium']:
-        return {'score': avg_score, 'color': 'YELLOW', 'risk_level': 'MEDIO'}
+        return {'score': avg_score, 'color': 'YELLOW', 'risk_level': 'MEDIUM'}
     else:
-        return {'score': avg_score, 'color': 'GREEN', 'risk_level': 'BASSO'}
+        return {'score': avg_score, 'color': 'GREEN', 'risk_level': 'LOW'}
 
 
 def calculate_bom_risk_v3(
@@ -736,11 +770,11 @@ def calculate_bom_risk_v3(
     avg_score = weighted_score
 
     if avg_score >= RISK_THRESHOLDS['high']:
-        color, risk_level = 'RED', 'ALTO'
+        color, risk_level = 'RED', 'HIGH'
     elif avg_score >= RISK_THRESHOLDS['medium']:
-        color, risk_level = 'YELLOW', 'MEDIO'
+        color, risk_level = 'YELLOW', 'MEDIUM'
     else:
-        color, risk_level = 'GREEN', 'BASSO'
+        color, risk_level = 'GREEN', 'LOW'
 
     return {
         'score': round(avg_score, 1),

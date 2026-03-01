@@ -41,6 +41,7 @@ SHEET_DISTRIBUTORS = 'Distributors'
 SHEET_PART_DISTRIBUTORS = 'Part_Distributors'
 SHEET_ALT_SOURCES = 'Alt_Sources'
 SHEET_SUPPLIER_PROFILES = 'Supplier_Profiles'
+SHEET_MARKET_SHORTAGE = 'Market_Shortage'
 
 # Colonne obbligatorie per ogni foglio
 PART_NUMBERS_COLUMNS = [
@@ -84,6 +85,8 @@ PART_NUMBERS_COLUMNS = [
     'Last_Price_Increase_Pct',       # % ultimo aumento prezzo
     'Allocation_Status',             # Normal / Constrained / Allocated
     'Package_Type',                  # QFP / BGA / WLCSP / QFN / SOP / DIP / CSP
+    # v5.0 - Compatibility
+    'Supported_Interfaces',          # es. "DDR3,DDR4,DDR5" per MPU/MCU; "DDR4" per memoria
     # Timestamps
     'Created_at',
     'Updated_at'
@@ -178,6 +181,22 @@ ALT_SOURCES_COLUMNS = [
     'Allocation_Pct',         # % attuale di acquisto da questa fonte
     'Notes',
     'Created_at',
+    # v5.0 - Compatibility fields
+    'Interface_Type',         # DDR3/DDR4/DDR5/LPDDR4/LPDDR4X/LPDDR5/NOR_Flash/NAND/...
+    'Package_Compatible',     # Y / N / Partial
+    'OS_Compatible',          # Linux / RTOS / Baremetal / Any
+    'Drop_In_Replacement',    # Y / N / Partial
+    'Porting_Effort_Hours',   # ore-uomo stimate per migrazione
+    'Availability_Status',    # Available / Tight / Shortage / EOL
+]
+
+MARKET_SHORTAGE_COLUMNS = [
+    'Interface_Type',         # DDR4 / LPDDR4 / NOR_Flash / NAND_Flash / SiC / ...
+    'Severity',               # Available / Tight / Shortage / Critical
+    'Since_Date',             # Data inizio shortage (YYYY-MM-DD)
+    'Notes',                  # es. "domanda AI/Data Center GPU"
+    'Source',                 # es. "Nexar API" / "Manuale" / "Industry Report"
+    'Updated_at',
 ]
 
 SUPPLIER_PROFILES_COLUMNS = [
@@ -257,6 +276,9 @@ class PartNumberDatabase:
             )
             pd.DataFrame(columns=SUPPLIER_PROFILES_COLUMNS).to_excel(
                 writer, sheet_name=SHEET_SUPPLIER_PROFILES, index=False
+            )
+            pd.DataFrame(columns=MARKET_SHORTAGE_COLUMNS).to_excel(
+                writer, sheet_name=SHEET_MARKET_SHORTAGE, index=False
             )
 
     def _load_sheet(self, sheet_name: str) -> pd.DataFrame:
@@ -1191,6 +1213,69 @@ class PartNumberDatabase:
             return True
         except Exception as e:
             print(f"Errore nella rimozione profilo fornitore: {e}")
+            return False
+
+    # -------------------------------------------------------------------------
+    # METODI PUBBLICI - MARKET_SHORTAGE (v5.0)
+    # -------------------------------------------------------------------------
+
+    def get_market_shortage(self) -> Dict[str, str]:
+        """Restituisce {Interface_Type: Severity} per tutti i shortage attivi."""
+        df = self._load_sheet(SHEET_MARKET_SHORTAGE)
+        if df.empty:
+            return {}
+        result = {}
+        for _, row in df.iterrows():
+            itype = str(row.get('Interface_Type', '')).strip()
+            severity = str(row.get('Severity', 'Available')).strip()
+            if itype:
+                result[itype] = severity
+        return result
+
+    def upsert_shortage(self, interface_type: str, severity: str,
+                        notes: str = '', source: str = 'Manuale',
+                        since_date: str = '') -> bool:
+        """Inserisce o aggiorna un record di shortage per un tipo di interfaccia."""
+        try:
+            df = self._load_sheet(SHEET_MARKET_SHORTAGE)
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            if not since_date:
+                since_date = datetime.now().strftime('%Y-%m-%d')
+            new_data = {
+                'Interface_Type': interface_type.strip(),
+                'Severity': severity,
+                'Since_Date': since_date,
+                'Notes': notes,
+                'Source': source,
+                'Updated_at': now,
+            }
+            if not df.empty:
+                mask = df['Interface_Type'].astype(str).str.upper() == interface_type.upper().strip()
+                if mask.any():
+                    for col in new_data:
+                        df.loc[mask, col] = new_data[col]
+                    self._save_sheet(df, SHEET_MARKET_SHORTAGE)
+                    return True
+            new_row = pd.DataFrame([new_data])
+            df = pd.concat([df, new_row], ignore_index=True)
+            self._save_sheet(df, SHEET_MARKET_SHORTAGE)
+            return True
+        except Exception as e:
+            print(f"Errore upsert shortage: {e}")
+            return False
+
+    def remove_shortage(self, interface_type: str) -> bool:
+        """Rimuove un record di shortage."""
+        try:
+            df = self._load_sheet(SHEET_MARKET_SHORTAGE)
+            if df.empty:
+                return False
+            mask = df['Interface_Type'].astype(str).str.upper() == interface_type.upper().strip()
+            df = df[~mask]
+            self._save_sheet(df, SHEET_MARKET_SHORTAGE)
+            return True
+        except Exception as e:
+            print(f"Errore rimozione shortage: {e}")
             return False
 
     def get_stats(self) -> Dict[str, Any]:
