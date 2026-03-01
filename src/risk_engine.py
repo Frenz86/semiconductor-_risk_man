@@ -78,6 +78,81 @@ def _get_safe_value(row: Dict[str, Any], key: str, default: Any = None) -> Any:
 
 
 # =============================================================================
+# P×I MATRIX (ISO 31000 standard) — v4.3
+# =============================================================================
+
+def _calculate_probability_impact(row: Dict[str, Any], score: float, is_spof: bool, buffer_coverage_weeks: float) -> Dict[str, Any]:
+    """
+    Calcola Probability (1-5) × Impact (1-5) per visualizzazione heat map standard GRC.
+
+    Probability: stima la likelihood di un evento di disruption
+    Impact: stima le conseguenze sul business (valore BOM + dipendenze)
+
+    Returns:
+        {'px_probability': int, 'px_impact': int, 'px_score': int, 'px_color': str}
+    """
+    # --- PROBABILITY (1-5) ---
+    alloc = str(_get_safe_value(row, 'Allocation_Status', 'Normal')).upper()
+    prob = {'ALLOCATED': 4, 'CONSTRAINED': 3}.get(alloc, 2)
+
+    eol = str(_get_safe_value(row, 'EOL_Status', 'Active')).upper()
+    if eol in ('EOL', 'OBSOLETE', 'LAST_BUY'):
+        prob = min(5, prob + 1)
+
+    alt_count = int(_get_safe_value(row, 'Number_of_Alternative_Sources', 1) or 1)
+    if alt_count == 0:
+        prob = min(5, prob + 1)
+
+    lead_time = float(_get_safe_value(row, 'Supplier Lead Time (weeks)', 0) or 0)
+    if lead_time >= 24:
+        prob = min(5, prob + 1)
+
+    prob = max(1, min(5, prob))
+
+    # --- IMPACT (1-5) ---
+    unit_price = float(_get_safe_value(row, 'Unit Price ($)', 0) or 0)
+    qty = float(_get_safe_value(row, 'How Many Device of this specific PN are in the BOM?', 1) or 1)
+    bom_value = unit_price * qty
+
+    if bom_value >= 500:
+        impact = 5
+    elif bom_value >= 200:
+        impact = 4
+    elif bom_value >= 50:
+        impact = 3
+    elif bom_value >= 10:
+        impact = 2
+    else:
+        impact = 1
+
+    if is_spof:
+        impact = min(5, impact + 1)
+
+    standalone = str(_get_safe_value(row, 'Stand-Alone Functional Device (Y/N)', 'Y')).upper()
+    if standalone == 'N':
+        impact = min(5, impact + 1)
+
+    impact = max(1, min(5, impact))
+
+    px_score = prob * impact
+
+    # Colore heat map: zona rossa P×I >= 12, gialla >= 6, verde < 6
+    if px_score >= 12:
+        px_color = 'RED'
+    elif px_score >= 6:
+        px_color = 'YELLOW'
+    else:
+        px_color = 'GREEN'
+
+    return {
+        'px_probability': prob,
+        'px_impact': impact,
+        'px_score': px_score,
+        'px_color': px_color,
+    }
+
+
+# =============================================================================
 # MOTORE DI CALCOLO DEL RISCHIO v3.0
 # =============================================================================
 
@@ -640,6 +715,9 @@ def calculate_component_risk(
         color = "GREEN"
         risk_level = "LOW"
 
+    # P×I Matrix (ISO 31000) — v4.3
+    px = _calculate_probability_impact(row, score, is_spof, buffer_coverage_weeks)
+
     return {
         'score': score,
         'color': color,
@@ -661,6 +739,11 @@ def calculate_component_risk(
         # v5.0 - Compatibility & Shortage
         'shortage_impact': shortage_result,
         'suggested_alternatives': suggested_alternatives,
+        # v4.3 - P×I Matrix
+        'px_probability': px['px_probability'],
+        'px_impact': px['px_impact'],
+        'px_score': px['px_score'],
+        'px_color': px['px_color'],
     }
 
 

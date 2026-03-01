@@ -26,8 +26,27 @@ def render_tab_albero_dipendenze():
 
         batch = st.session_state.batch_results
         if batch:
+            components_data = batch['components_data']
             bom_risk = batch['bom_risk']
             graph = bom_risk.get('dependency_graph', None)
+
+            # Conta componenti non stand-alone (con dipendenze)
+            non_standalone = [c for c in components_data if c.get('Stand-Alone Functional Device (Y/N)') == 'N']
+            total_deps = sum(len(c.get('Required_Dependencies', '').split(',')) for c in non_standalone if c.get('Required_Dependencies'))
+
+            # Avviso se poche dipendenze
+            if len(non_standalone) == 0:
+                st.info(
+                    "Nessuna dipendenza funzionale trovata nel BOM. "
+                    "Il grafo mostra solo i componenti **non stand-alone** (es. MPU che dipende da PMIC). "
+                    "Assicurati che il database abbia 'Stand-Alone Functional Device (Y/N)' = 'N' "
+                    "e 'Required_Dependencies' compilati."
+                )
+            elif total_deps < 2:
+                st.warning(
+                    f"Trovate solo {len(non_standalone)} componenti con dipendenze. "
+                    "Il grafo sara' limitato. Verifica che 'Required_Dependencies' sia compilato nel DB."
+                )
 
             if graph is not None and isinstance(graph, nx.DiGraph) and len(graph.nodes()) > 0:
 

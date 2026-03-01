@@ -4,16 +4,17 @@ gestione_database.py — Tab: render_tab_gestione_database
 
 import pandas as pd
 import streamlit as st
+from datetime import datetime
 
 
 def render_tab_gestione_database():
     """Tab 6: Gestione Database Part Numbers"""
     st.header("Database Management — Part Numbers")
 
-    tab6_1, tab6_2, tab6_3, tab6_ems, tab6_dist, tab6_alt, tab6_sup, tab6_ip, tab6_shortage = st.tabs([
+    tab6_1, tab6_2, tab6_3, tab6_ems, tab6_dist, tab6_alt, tab6_sup, tab6_ip, tab6_shortage, tab6_log = st.tabs([
         "Statistics", "Add Part Number", "Client Management",
         "EMS Providers", "Distributors", "Alternative Sources", "Supplier Profiles",
-        "IP Dependencies", "Market Shortage"
+        "IP Dependencies", "Market Shortage", "Activity Log"
     ])
 
     with tab6_1:
@@ -185,6 +186,45 @@ def render_tab_gestione_database():
                     st.rerun()
                 else:
                     st.error("Error adding client")
+
+        st.markdown("---")
+        st.subheader("Risk Appetite Configuration")
+        st.caption("Define custom risk thresholds per client (default: HIGH ≥ 55, MEDIUM ≥ 30)")
+
+        clients_for_appetite = st.session_state.db.get_all_clients()
+        if clients_for_appetite:
+            client_ids_appetite = [c['Client_ID'] for c in clients_for_appetite]
+            selected_appetite_client = st.selectbox("Select Client", client_ids_appetite, key="appetite_client_sel")
+            if selected_appetite_client:
+                current_appetite = st.session_state.db.get_client_risk_appetite(selected_appetite_client)
+                with st.form("risk_appetite_form"):
+                    col_ap1, col_ap2 = st.columns(2)
+                    with col_ap1:
+                        new_high = st.number_input(
+                            "HIGH threshold (RED)", min_value=10, max_value=99,
+                            value=current_appetite['high'], help="Score >= this value → RED"
+                        )
+                    with col_ap2:
+                        new_medium = st.number_input(
+                            "MEDIUM threshold (YELLOW)", min_value=5, max_value=98,
+                            value=current_appetite['medium'], help="Score >= this value → YELLOW"
+                        )
+                    if st.form_submit_button("Save Risk Appetite", type="primary"):
+                        if new_medium >= new_high:
+                            st.error("MEDIUM threshold must be lower than HIGH threshold.")
+                        elif st.session_state.db.update_client_risk_appetite(selected_appetite_client, new_high, new_medium):
+                            st.session_state.db.log_action(
+                                client_id=selected_appetite_client,
+                                action_type='threshold_changed',
+                                old_value=f"HIGH={current_appetite['high']}, MEDIUM={current_appetite['medium']}",
+                                new_value=f"HIGH={new_high}, MEDIUM={new_medium}",
+                                notes="Risk Appetite aggiornato da Client Management",
+                            )
+                            st.success(f"Risk appetite updated for **{selected_appetite_client}**: HIGH={new_high}, MEDIUM={new_medium}")
+                        else:
+                            st.error("Error saving risk appetite.")
+        else:
+            st.info("Add at least one client to configure risk appetite.")
 
     # -------------------------------------------------------------------------
     # SUB-TAB: EMS PROVIDERS (v4.0)
@@ -752,5 +792,81 @@ def render_tab_gestione_database():
                 except Exception as e:
                     st.error(f"Error reading CSV: {e}")
 
+    # -------------------------------------------------------------------------
+    # SUB-TAB: ACTIVITY LOG (v4.3 — Audit Trail)
+    # -------------------------------------------------------------------------
+    with tab6_log:
+        st.subheader("Activity Log — Audit Trail")
+        st.markdown(
+            "Traccia immutabile di tutte le azioni rilevanti: analisi BOM, "
+            "cambio owner, cambio soglie risk appetite, snapshot salvati. "
+            "Conforme ai requisiti di audit enterprise (ISO 31000 / GRC)."
+        )
 
+        db = st.session_state.db
+        client_id = st.session_state.get('current_client', '')
+
+        # Filtri
+        col_f1, col_f2, col_f3 = st.columns(3)
+        with col_f1:
+            filter_action = st.selectbox(
+                "Filtra per tipo azione",
+                ["Tutte", "risk_analysis", "owner_assigned", "risk_accepted",
+                 "mitigation_started", "mitigation_completed",
+                 "threshold_changed", "snapshot_saved"],
+                key="log_filter_action",
+            )
+        with col_f2:
+            filter_pn = st.text_input("Filtra per Part Number", placeholder="es. STM32F4", key="log_filter_pn")
+        with col_f3:
+            log_limit = st.number_input("Max righe", min_value=10, max_value=500, value=100, step=10, key="log_limit")
+
+        action_type_filter = None if filter_action == "Tutte" else filter_action
+        pn_filter = filter_pn.strip().upper() if filter_pn.strip() else None
+
+        log_df = db.get_activity_log(
+            client_id=client_id if client_id else None,
+            action_type=action_type_filter,
+            target_pn=pn_filter,
+            limit=int(log_limit),
+        )
+
+        if log_df.empty:
+            st.info("Nessuna attivita' registrata. Le azioni verranno tracciate automaticamente durante l'uso dell'app.")
+        else:
+            # Icone per tipo azione
+            _ACTION_ICONS = {
+                'risk_analysis': '🔍',
+                'snapshot_saved': '💾',
+                'owner_assigned': '👤',
+                'risk_accepted': '✅',
+                'mitigation_started': '🔧',
+                'mitigation_completed': '✔️',
+                'threshold_changed': '⚙️',
+            }
+
+            display_df = log_df.copy()
+            if 'Action_Type' in display_df.columns:
+                display_df['Action_Type'] = display_df['Action_Type'].apply(
+                    lambda x: f"{_ACTION_ICONS.get(str(x), '📋')} {x}"
+                )
+            if 'Timestamp' in display_df.columns:
+                display_df['Timestamp'] = pd.to_datetime(display_df['Timestamp'], errors='coerce').dt.strftime('%Y-%m-%d %H:%M')
+
+            st.dataframe(
+                display_df[['Timestamp', 'Action_Type', 'Target_PN', 'Old_Value', 'New_Value', 'Notes', 'User']],
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.caption(f"**{len(log_df)}** eventi trovati" + (f" per cliente {client_id}" if client_id else ""))
+
+            # Export CSV
+            csv_data = log_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                "📥 Scarica log CSV",
+                data=csv_data,
+                file_name=f"activity_log_{client_id or 'all'}_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                key="download_activity_log",
+            )
 

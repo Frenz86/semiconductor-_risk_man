@@ -147,10 +147,18 @@ def render_tab_analisi_multipla():
                         st.caption(f"BOM quantities saved in Client_Data for {saved} components")
 
                     if st.session_state.get('current_client') and batch:
+                        _cid = st.session_state.current_client
                         st.session_state.db.save_analysis_snapshot(
-                            client_id=st.session_state.current_client,
+                            client_id=_cid,
                             batch_results=batch,
                             bom_name=selected_bom,
+                        )
+                        _high = sum(1 for r in batch.get('components_risk', []) if r.get('risk_level') == 'HIGH')
+                        st.session_state.db.log_action(
+                            client_id=_cid,
+                            action_type='risk_analysis',
+                            new_value=f"BOM={selected_bom}, HIGH={_high}",
+                            notes=f"Batch {len(batch.get('components_risk', []))} componenti",
                         )
                 else:
                     st.error("Column 'Part Number' not found in the file.")
@@ -235,10 +243,18 @@ def render_tab_analisi_multipla():
                             st.caption(f"BOM quantities saved in Client_Data for {saved} components")
 
                         if st.session_state.get('current_client') and batch:
+                            _cid = st.session_state.current_client
                             st.session_state.db.save_analysis_snapshot(
-                                client_id=st.session_state.current_client,
+                                client_id=_cid,
                                 batch_results=batch,
                                 bom_name=uploaded_file.name,
+                            )
+                            _high = sum(1 for r in batch.get('components_risk', []) if r.get('risk_level') == 'HIGH')
+                            st.session_state.db.log_action(
+                                client_id=_cid,
+                                action_type='risk_analysis',
+                                new_value=f"BOM={uploaded_file.name}, HIGH={_high}",
+                                notes=f"Batch upload {len(batch.get('components_risk', []))} componenti",
                             )
                 else:
                     st.error("Column 'Part Number' not found in the file. Columns found: " +
@@ -371,6 +387,33 @@ def render_tab_analisi_multipla():
                     st.markdown("**AI Risk Summary:**")
                     st.info(generate_risk_narrative(risk))
 
+                    # Risk Ownership (GRC v4.3)
+                    client_id = st.session_state.get('current_client', '')
+                    pn = risk['part_number']
+                    owner_data = st.session_state.db.get_risk_owner(client_id, pn) if client_id else {'owner': '', 'status': 'Open'}
+                    col_own1, col_own2, col_own3 = st.columns([2, 1.5, 1])
+                    with col_own1:
+                        new_owner = st.text_input("Risk Owner", value=owner_data['owner'],
+                                                   key=f"owner_{pn}", placeholder="Name / Team")
+                    with col_own2:
+                        new_status = st.selectbox("Status", ['Open', 'In Progress', 'Accepted', 'Mitigated'],
+                                                   index=['Open', 'In Progress', 'Accepted', 'Mitigated'].index(owner_data['status']) if owner_data['status'] in ['Open', 'In Progress', 'Accepted', 'Mitigated'] else 0,
+                                                   key=f"status_{pn}")
+                    with col_own3:
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        if st.button("Save", key=f"save_owner_{pn}"):
+                            if client_id:
+                                old_owner_data = st.session_state.db.get_risk_owner(client_id, pn)
+                                st.session_state.db.update_risk_owner(client_id, pn, new_owner, new_status)
+                                st.session_state.db.log_action(
+                                    client_id=client_id,
+                                    action_type='owner_assigned',
+                                    target_pn=pn,
+                                    old_value=f"owner={old_owner_data.get('owner','')}, status={old_owner_data.get('status','')}",
+                                    new_value=f"owner={new_owner}, status={new_status}",
+                                )
+                                st.success("Saved")
+
         # PN non trovati
         if batch['not_found']:
             st.warning(f"**{len(batch['not_found'])}** part numbers not found: {', '.join(batch['not_found'])}")
@@ -442,7 +485,22 @@ def _run_batch_analysis(pns: List[str], client_id, run_rate):
         risk['supplier_profile'] = supplier_profile  # Per tier2 con profilo fornitore
         components_risk.append(risk)
         data['Part Number'] = pn
-        components_data.append(data)
+        components_data.append(data)  # FIX: spostato fuori dal blocco risk appetite
+
+    # v4.3 - Applica risk appetite del cliente (soglie personalizzate)
+    if client_id:
+        appetite = st.session_state.db.get_client_risk_appetite(client_id)
+        for risk in components_risk:
+            score = risk['score']
+            if score >= appetite['high']:
+                risk['color'] = 'RED'
+                risk['risk_level'] = 'HIGH'
+            elif score >= appetite['medium']:
+                risk['color'] = 'YELLOW'
+                risk['risk_level'] = 'MEDIUM'
+            else:
+                risk['color'] = 'GREEN'
+                risk['risk_level'] = 'LOW'
 
     # Calcola BOM risk v3 (con dependency graph)
     bom_risk_v3 = calculate_bom_risk_v3(components_data, components_risk)

@@ -4,6 +4,7 @@ dashboard.py — Tab: render_tab_dashboard_esecutiva
 
 from pdf_export import show_export_button
 from excel_export import show_excel_export_button
+from alert_engine import check_kri_alerts, get_alert_summary
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -22,6 +23,35 @@ def render_tab_dashboard_esecutiva():
     components_data = batch['components_data']
     components_risk = batch['components_risk']
     bom_risk = batch['bom_risk']
+
+    # =============================================================================
+    # SEZIONE 0: KRI ALERT BANNER (v4.3)
+    # =============================================================================
+    _client_id = st.session_state.get('current_client', '')
+    _appetite = st.session_state.db.get_client_risk_appetite(_client_id) if _client_id else {'high': 55, 'medium': 30}
+    _kri_alerts = check_kri_alerts(batch, risk_appetite=_appetite)
+
+    if _kri_alerts:
+        _summary = get_alert_summary(_kri_alerts)
+        if _summary['CRITICAL'] > 0:
+            st.error(
+                f"**KRI ALERT — {_summary['CRITICAL']} componenti CRITICAL** "
+                f"superano la soglia HIGH ({_appetite['high']}). "
+                f"Vedi dettaglio sotto."
+            )
+        if _summary['HIGH'] > 0:
+            st.warning(
+                f"**{_summary['HIGH']} nuovi componenti HIGH** rispetto all'analisi precedente."
+            )
+        if _summary['WARNING'] > 0:
+            st.warning(
+                f"**{_summary['WARNING']} componenti** con score aumentato >{10} punti."
+            )
+
+        with st.expander(f"Dettaglio KRI Alerts ({_summary['total']} alert)", expanded=False):
+            for al in _kri_alerts:
+                _icon = {'CRITICAL': '🔴', 'HIGH': '🟠', 'WARNING': '🟡'}.get(al['severity'], '⚪')
+                st.markdown(f"{_icon} **{al['severity']}** — {al['message']}")
 
     # =============================================================================
     # SEZIONE 1: KPI PRINCIPALI
@@ -155,6 +185,54 @@ def render_tab_dashboard_esecutiva():
     st.markdown("---")
 
     # =============================================================================
+    # SEZIONE 2B: P×I RISK MATRIX (ISO 31000)
+    # =============================================================================
+    st.subheader("📊 Probability × Impact Risk Matrix")
+
+    px_data = [
+        {
+            'Part Number': r.get('part_number', ''),
+            'Supplier': r.get('supplier', ''),
+            'Probability': r.get('px_probability', 1),
+            'Impact': r.get('px_impact', 1),
+            'P×I Score': r.get('px_score', 1),
+            'Risk Level': r.get('risk_level', 'LOW'),
+            'Score': r.get('score', 0),
+        }
+        for r in risks if r.get('px_score') is not None
+    ]
+
+    if px_data:
+        df_px = pd.DataFrame(px_data)
+        color_map = {'HIGH': '#ff4444', 'MEDIUM': '#ffbb33', 'LOW': '#00C851'}
+        fig_px = px.scatter(
+            df_px,
+            x='Probability',
+            y='Impact',
+            color='Risk Level',
+            color_discrete_map=color_map,
+            size='P×I Score',
+            hover_data=['Part Number', 'Supplier', 'Score', 'P×I Score'],
+            title='P×I Risk Matrix (ISO 31000)',
+            labels={'Probability': 'Probability (1-5)', 'Impact': 'Impact (1-5)'},
+            range_x=[0.5, 5.5],
+            range_y=[0.5, 5.5],
+        )
+        # Zone colorate di sfondo
+        fig_px.add_shape(type='rect', x0=0.5, y0=0.5, x1=2.5, y1=2.5,
+                         fillcolor='#e8f5e9', opacity=0.3, line_width=0)
+        fig_px.add_shape(type='rect', x0=2.5, y0=2.5, x1=5.5, y1=5.5,
+                         fillcolor='#ffebee', opacity=0.3, line_width=0)
+        fig_px.update_layout(height=380, xaxis=dict(tickmode='linear', dtick=1),
+                              yaxis=dict(tickmode='linear', dtick=1))
+        st.plotly_chart(fig_px, use_container_width=True)
+        st.caption("Size = P×I score (1-25). Top-right = high risk zone. Bottom-left = low risk zone.")
+    else:
+        st.info("Run a Multiple Analysis to display the P×I matrix.")
+
+    st.markdown("---")
+
+    # =============================================================================
     # SEZIONE 3: HEAT MAP CATEGORIE x LIVELLO RISCHIO
     # =============================================================================
     st.subheader("🔥 Heat Map: Categories x Risk Level")
@@ -211,16 +289,23 @@ def render_tab_dashboard_esecutiva():
                 lead_time = comp.get('Supplier Lead Time (weeks)', 0)
                 break
 
+        # Risk Owner da Client_Data
+        client_id = st.session_state.get('current_client', '')
+        pn = r.get('part_number', '')
+        owner_info = st.session_state.db.get_risk_owner(client_id, pn) if client_id and pn else {'owner': '', 'status': ''}
+
         top10_data.append({
             'Rank': i,
-            'Part Number': r.get('part_number', 'N/A'),
+            'Part Number': pn or 'N/A',
             'Supplier': r.get('supplier', 'N/A'),
             'Score': r['score'],
             'Level': r['risk_level'],
             'Lead Time (w)': lead_time,
             'Geo Score': geo.get('composite_score', 0),
             'Switching': sw.get('classification', 'N/A'),
-            'SPOF': 'Yes' if any('solo stabilimento' in f.lower() for f in r['factors']) else 'No'
+            'SPOF': 'Yes' if any('solo stabilimento' in f.lower() for f in r['factors']) else 'No',
+            'Owner': owner_info['owner'] or '—',
+            'Status': owner_info['status'] or '—',
         })
 
     df_top10 = pd.DataFrame(top10_data)

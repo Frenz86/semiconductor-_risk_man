@@ -46,6 +46,8 @@ SHEET_MARKET_SHORTAGE = 'Market_Shortage'
 SHEET_IP_DEPENDENCIES = 'IP_Dependencies'
 # v4.2 - Historical Trend
 SHEET_ANALYSIS_HISTORY = 'Analysis_History'
+# v4.3 - Audit Trail
+SHEET_ACTIVITY_LOG = 'Activity_Log'
 
 # Colonne obbligatorie per ogni foglio
 PART_NUMBERS_COLUMNS = [
@@ -102,14 +104,20 @@ CLIENT_DATA_COLUMNS = [
     'How Many Device of this specific PN are in the BOM?',
     'If Dedicated Buffer Stock Units to the supplier is yes specify the number of Units',
     'Custom Supplier Lead Time (weeks)',
-    'Notes'
+    'Notes',
+    # v4.3 - GRC
+    'Risk_Owner',        # Responsabile della mitigazione del rischio
+    'Risk_Status',       # Open / In Progress / Accepted / Mitigated
 ]
 
 CLIENTS_COLUMNS = [
     'Client_ID',
     'Client_Name',
     'Default_Run_Rate',
-    'Created_at'
+    'Created_at',
+    # v4.3 - Risk Appetite
+    'Risk_Appetite_High',    # soglia RED (default 55)
+    'Risk_Appetite_Medium',  # soglia YELLOW (default 30)
 ]
 
 TIER2_SUPPLIERS_COLUMNS = [
@@ -248,6 +256,22 @@ ANALYSIS_HISTORY_COLUMNS = [
 ]
 
 
+# v4.3 - Activity Log (Audit Trail)
+ACTIVITY_LOG_COLUMNS = [
+    'Log_ID',         # Auto-generato: LOG_001, LOG_002, ...
+    'Client_ID',      # FK -> Clients
+    'Timestamp',      # datetime ISO
+    'User',           # utente (default 'system')
+    'Action_Type',    # enum: risk_analysis, owner_assigned, risk_accepted,
+                      #   mitigation_started, mitigation_completed,
+                      #   threshold_changed, snapshot_saved
+    'Target_PN',      # part number coinvolto (o '' per azioni globali)
+    'Old_Value',      # valore precedente (stringa)
+    'New_Value',      # valore nuovo (stringa)
+    'Notes',          # note libere
+]
+
+
 # =============================================================================
 # CLASSE PRINCIPALE
 # =============================================================================
@@ -323,6 +347,10 @@ class PartNumberDatabase:
             # v4.2 - Analysis History
             pd.DataFrame(columns=ANALYSIS_HISTORY_COLUMNS).to_excel(
                 writer, sheet_name=SHEET_ANALYSIS_HISTORY, index=False
+            )
+            # v4.3 - Activity Log
+            pd.DataFrame(columns=ACTIVITY_LOG_COLUMNS).to_excel(
+                writer, sheet_name=SHEET_ACTIVITY_LOG, index=False
             )
 
     def _load_sheet(self, sheet_name: str) -> pd.DataFrame:
@@ -675,6 +703,118 @@ class PartNumberDatabase:
         except Exception as e:
             print(f"Errore nell'aggiornare il run rate: {e}")
             return False
+
+    def get_client_risk_appetite(self, client_id: str) -> Dict[str, int]:
+        """
+        Restituisce le soglie di rischio configurate per un cliente (risk appetite).
+
+        Returns:
+            {'high': int, 'medium': int} — soglie RED e YELLOW
+        """
+        defaults = {'high': 55, 'medium': 30}
+        if not client_id:
+            return defaults
+        client = self.get_client(client_id)
+        if not client:
+            return defaults
+        high = client.get('Risk_Appetite_High')
+        medium = client.get('Risk_Appetite_Medium')
+        try:
+            return {
+                'high': int(float(high)) if high is not None and str(high) not in ('', 'nan') else 55,
+                'medium': int(float(medium)) if medium is not None and str(medium) not in ('', 'nan') else 30,
+            }
+        except (ValueError, TypeError):
+            return defaults
+
+    def update_client_risk_appetite(self, client_id: str, high: int, medium: int) -> bool:
+        """
+        Aggiorna le soglie di rischio per un cliente.
+
+        Args:
+            client_id: ID del cliente
+            high: Soglia RED (es. 55)
+            medium: Soglia YELLOW (es. 30)
+
+        Returns:
+            True se successo
+        """
+        try:
+            df_clients = self._load_sheet(SHEET_CLIENTS)
+            mask = df_clients['Client_ID'].astype(str).str.upper() == client_id.upper()
+            if not mask.any():
+                return False
+            df_clients.loc[mask, 'Risk_Appetite_High'] = high
+            df_clients.loc[mask, 'Risk_Appetite_Medium'] = medium
+            self._save_sheet(df_clients, SHEET_CLIENTS)
+            return True
+        except Exception as e:
+            print(f"Errore nell'aggiornare il risk appetite: {e}")
+            return False
+
+    def update_risk_owner(self, client_id: str, part_number: str, owner: str, status: str = 'Open') -> bool:
+        """
+        Aggiorna o crea il Risk Owner e lo status per un PN in Client_Data.
+
+        Args:
+            client_id: ID del cliente
+            part_number: Part Number
+            owner: Nome del responsabile (es. "Mario Rossi")
+            status: 'Open' / 'In Progress' / 'Accepted' / 'Mitigated'
+
+        Returns:
+            True se successo
+        """
+        try:
+            df = self._load_sheet(SHEET_CLIENT_DATA)
+            if df.empty:
+                df = pd.DataFrame(columns=CLIENT_DATA_COLUMNS)
+
+            pn_upper = str(part_number).strip().upper()
+            client_upper = str(client_id).strip().upper()
+
+            mask = (
+                df['Client_ID'].astype(str).str.upper() == client_upper
+            ) & (
+                df['Part Number'].astype(str).str.upper() == pn_upper
+            )
+
+            if mask.any():
+                df.loc[mask, 'Risk_Owner'] = owner
+                df.loc[mask, 'Risk_Status'] = status
+            else:
+                new_row = {col: None for col in CLIENT_DATA_COLUMNS}
+                new_row['Client_ID'] = client_id
+                new_row['Part Number'] = part_number
+                new_row['Risk_Owner'] = owner
+                new_row['Risk_Status'] = status
+                df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+
+            self._save_sheet(df, SHEET_CLIENT_DATA)
+            return True
+        except Exception as e:
+            print(f"Errore nell'aggiornare il risk owner: {e}")
+            return False
+
+    def get_risk_owner(self, client_id: str, part_number: str) -> Dict[str, str]:
+        """Restituisce owner e status per un PN/cliente."""
+        df = self._load_sheet(SHEET_CLIENT_DATA)
+        if df.empty:
+            return {'owner': '', 'status': 'Open'}
+        pn_upper = str(part_number).strip().upper()
+        client_upper = str(client_id).strip().upper()
+        mask = (
+            df['Client_ID'].astype(str).str.upper() == client_upper
+        ) & (
+            df['Part Number'].astype(str).str.upper() == pn_upper
+        )
+        if mask.any():
+            row = df[mask].iloc[0]
+            return {
+                'owner': str(row.get('Risk_Owner', '') or ''),
+                'status': str(row.get('Risk_Status', 'Open') or 'Open'),
+            }
+        return {'owner': '', 'status': 'Open'}
 
     def get_client(self, client_id: str) -> Optional[Dict[str, Any]]:
         """Restituisce i dati di un cliente."""
@@ -1600,3 +1740,97 @@ class PartNumberDatabase:
             df = df.sort_values('Timestamp')
 
         return df.reset_index(drop=True)
+
+    # -------------------------------------------------------------------------
+    # v4.3 - Audit Trail / Activity Log
+    # -------------------------------------------------------------------------
+
+    def log_action(
+        self,
+        client_id: str,
+        action_type: str,
+        target_pn: str = '',
+        old_value: str = '',
+        new_value: str = '',
+        notes: str = '',
+        user: str = 'system',
+    ) -> bool:
+        """
+        Aggiunge una riga di log al foglio Activity_Log.
+
+        Args:
+            client_id:    ID cliente (FK -> Clients)
+            action_type:  enum: risk_analysis, owner_assigned, risk_accepted,
+                          mitigation_started, mitigation_completed,
+                          threshold_changed, snapshot_saved
+            target_pn:    Part Number coinvolto ('' per azioni globali)
+            old_value:    Valore precedente (stringa)
+            new_value:    Valore nuovo (stringa)
+            notes:        Note libere
+            user:         Utente che ha eseguito l'azione (default 'system')
+
+        Returns:
+            True se salvato, False in caso di errore
+        """
+        try:
+            df = self._load_sheet(SHEET_ACTIVITY_LOG)
+            if df.empty:
+                df = pd.DataFrame(columns=ACTIVITY_LOG_COLUMNS)
+
+            # Genera Log_ID progressivo
+            existing_ids = df['Log_ID'].dropna().astype(str).tolist() if 'Log_ID' in df.columns else []
+            next_num = len(existing_ids) + 1
+            log_id = f'LOG_{next_num:04d}'
+
+            new_row = {
+                'Log_ID': log_id,
+                'Client_ID': client_id,
+                'Timestamp': datetime.now().isoformat(),
+                'User': user,
+                'Action_Type': action_type,
+                'Target_PN': target_pn,
+                'Old_Value': str(old_value) if old_value is not None else '',
+                'New_Value': str(new_value) if new_value is not None else '',
+                'Notes': notes,
+            }
+            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+            self._save_sheet(df, SHEET_ACTIVITY_LOG)
+            return True
+        except Exception:
+            return False
+
+    def get_activity_log(
+        self,
+        client_id: Optional[str] = None,
+        action_type: Optional[str] = None,
+        target_pn: Optional[str] = None,
+        limit: int = 200,
+    ) -> pd.DataFrame:
+        """
+        Restituisce il log delle attivita', opzionalmente filtrato.
+
+        Args:
+            client_id:   Filtra per cliente (None = tutti)
+            action_type: Filtra per tipo azione (None = tutti)
+            target_pn:   Filtra per PN specifico (None = tutti)
+            limit:       Max righe da restituire (ordinate dal piu' recente)
+
+        Returns:
+            DataFrame con le colonne di ACTIVITY_LOG_COLUMNS
+        """
+        df = self._load_sheet(SHEET_ACTIVITY_LOG)
+        if df.empty:
+            return pd.DataFrame(columns=ACTIVITY_LOG_COLUMNS)
+
+        if client_id:
+            df = df[df['Client_ID'].astype(str) == str(client_id)]
+        if action_type:
+            df = df[df['Action_Type'].astype(str) == str(action_type)]
+        if target_pn:
+            df = df[df['Target_PN'].astype(str).str.upper() == str(target_pn).upper()]
+
+        if 'Timestamp' in df.columns:
+            df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+            df = df.sort_values('Timestamp', ascending=False)
+
+        return df.head(limit).reset_index(drop=True)

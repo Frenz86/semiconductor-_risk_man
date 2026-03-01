@@ -1,14 +1,16 @@
 """
 excel_export.py — Export report multi-foglio in formato Excel (.xlsx)
 v4.2: Foglio 1 Summary KPI, Foglio 2 Dettaglio Componenti, Foglio 3 Switching Costs, Foglio 4 Tier-2 Bottlenecks
+v4.3: Foglio 5 KRI Alerts
 """
 
 from io import BytesIO
 from datetime import datetime
 import pandas as pd
+from alert_engine import check_kri_alerts
 
 
-def generate_excel_report(batch_results: dict, client_id: str, run_rate: int = 0) -> BytesIO | None:
+def generate_excel_report(batch_results: dict, client_id: str, run_rate: int = 0, owner_map: dict = None) -> BytesIO | None:
     """
     Genera un report Excel multi-foglio dal risultato di un'analisi batch.
 
@@ -17,6 +19,7 @@ def generate_excel_report(batch_results: dict, client_id: str, run_rate: int = 0
                        components_risk, bom_risk, not_found, components_data
         client_id: ID del cliente
         run_rate: PCB/settimana (per metadati)
+        owner_map: Mappa {part_number: {'owner': str, 'status': str}} per Risk Owner (v4.3)
 
     Returns:
         BytesIO contenente il file .xlsx, o None se batch_results è vuoto
@@ -86,13 +89,17 @@ def generate_excel_report(batch_results: dict, client_id: str, run_rate: int = 0
         for r in sorted(components_risk, key=lambda x: x.get('score', 0), reverse=True):
             sw = r.get('switching_cost', {})
             geo = r.get('geo_risk', {})
+            pn = r.get('part_number', '')
+            owner_info = owner_map.get(pn, {}) if owner_map else {}
             rows_detail.append({
-                'Part Number': r.get('part_number', ''),
+                'Part Number': pn,
                 'Supplier': r.get('supplier', ''),
                 'Category': r.get('category', ''),
                 'Risk Score': round(r.get('score', 0), 1),
                 'Risk Level': r.get('risk_level', ''),
                 'Color': r.get('color', ''),
+                'Risk Owner': owner_info.get('owner', ''),
+                'Risk Status': owner_info.get('status', ''),
                 'SPOF': 'Yes' if r.get('is_spof') else 'No',
                 'Frontend Country': r.get('frontend_country', ''),
                 'Backend Country': r.get('backend_country', ''),
@@ -176,6 +183,39 @@ def generate_excel_report(batch_results: dict, client_id: str, run_rate: int = 0
                                            'Criticality', 'Substitutability', 'Tier-2 Score'])
         df_t2.to_excel(writer, sheet_name='Tier-2 Bottlenecks', index=False)
 
+        # =====================================================================
+        # Foglio 5: KRI Alerts (v4.3)
+        # =====================================================================
+        # Importiamo la funzione per calcolare gli alert
+        try:
+            from pn_lookup import PartNumberDatabase
+            # Se abbiamo un client_id, recuperiamo il risk appetite dal DB
+            appetite = {'high': 55, 'medium': 30}  # default
+            if client_id:
+                # Usiamo il DB dalla sessione se disponibile, altrimenti usiamo il default
+                pass  # appetite sarà usato come default
+        except Exception:
+            appetite = {'high': 55, 'medium': 30}
+
+        kri_alerts = check_kri_alerts(batch_results, risk_appetite=appetite)
+
+        rows_kri = []
+        for alert in kri_alerts:
+            rows_kri.append({
+                'Severity': alert.get('severity', ''),
+                'Type': alert.get('alert_type', ''),
+                'Part Number': alert.get('part_number', ''),
+                'Supplier': alert.get('supplier', ''),
+                'Score': alert.get('score', 0),
+                'Message': alert.get('message', ''),
+                'Timestamp': alert.get('timestamp', ''),
+            })
+        if rows_kri:
+            df_kri = pd.DataFrame(rows_kri)
+        else:
+            df_kri = pd.DataFrame(columns=['Severity', 'Type', 'Part Number', 'Supplier', 'Score', 'Message', 'Timestamp'])
+        df_kri.to_excel(writer, sheet_name='KRI Alerts', index=False)
+
     # Applica stili (colori header + colori righe rischio) tramite openpyxl
     buffer.seek(0)
     wb = load_workbook(buffer)
@@ -243,7 +283,16 @@ def show_excel_export_button(batch_results: dict, client_id: str, run_rate: int 
     if not batch_results:
         return
 
-    excel_buffer = generate_excel_report(batch_results, client_id, run_rate)
+    # Costruisci mappa Risk Owner per Excel export (v4.3)
+    owner_map = {}
+    if client_id and hasattr(st, 'session_state') and 'db' in st.session_state:
+        db = st.session_state.db
+        for r in batch_results.get('components_risk', []):
+            pn = r.get('part_number', '')
+            if pn:
+                owner_map[pn] = db.get_risk_owner(client_id, pn)
+
+    excel_buffer = generate_excel_report(batch_results, client_id, run_rate, owner_map)
     if excel_buffer is None:
         st.warning("openpyxl not installed. Run: pip install openpyxl")
         return

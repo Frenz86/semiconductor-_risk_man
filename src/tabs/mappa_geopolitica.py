@@ -28,6 +28,16 @@ def render_tab_mappa_geopolitica():
 
             markers = generate_risk_map_data(components_data)
 
+            # Avviso se pochi marker rispetto ai componenti totali
+            total_comps = len(components_data)
+            found_markers = len(markers)
+            if found_markers < total_comps:
+                missing_pct = (total_comps - found_markers) / total_comps * 100
+                st.warning(
+                    f"Solo **{found_markers}/{total_comps}** componenti ({100-missing_pct:.0f}%) "
+                    f"hanno dati geografici completi. Aggiungi Frontend_Country/Backend_Country al DB per vedere piu' marker."
+                )
+
             if markers:
                 m = folium.Map(location=[30, 0], zoom_start=2, tiles='CartoDB positron')
 
