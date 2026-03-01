@@ -21,6 +21,7 @@ from tabs import (
     render_tab_albero_dipendenze,
     render_tab_mappa_geopolitica,
     render_tab_tier2_visibility,
+    render_tab_ip_dependencies,
     render_tab_costi_switching,
     render_tab_gestione_database,
     render_tab_simulatore_whatif,
@@ -264,13 +265,14 @@ st.markdown("**Deterministic risk analysis with dependencies, geo-risk frontend/
 # TABS
 # =============================================================================
 
-tab_guida, tab_multipla, tab_dashboard, tab_albero, tab_mappa, tab_tier2, tab_switching, tab_filiera, tab_whatif, tab_database = st.tabs([
+tab_guida, tab_multipla, tab_dashboard, tab_albero, tab_mappa, tab_tier2, tab_ip, tab_switching, tab_filiera, tab_whatif, tab_database = st.tabs([
     "Guide",
     "Multiple Analysis",
     "Dashboard",
     "Dependency Tree",
     "Geopolitical Map",
     "Tier-2/3 Visibility",
+    "IP/SW Dependencies",
     "Switching Costs",
     "Commercial Supply Chain",
     "What-If Simulator",
@@ -298,6 +300,9 @@ with tab_mappa:
 
 with tab_tier2:
     render_tab_tier2_visibility()
+
+with tab_ip:
+    render_tab_ip_dependencies()
 
 with tab_switching:
     render_tab_costi_switching()

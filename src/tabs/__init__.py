@@ -9,6 +9,7 @@ from .dashboard           import render_tab_dashboard_esecutiva
 from .albero_dipendenze   import render_tab_albero_dipendenze
 from .mappa_geopolitica   import render_tab_mappa_geopolitica
 from .tier2_visibility    import render_tab_tier2_visibility
+from .ip_dependencies     import render_tab_ip_dependencies
 from .costi_switching     import render_tab_costi_switching
 from .gestione_database   import render_tab_gestione_database
 from .whatif              import render_tab_simulatore_whatif

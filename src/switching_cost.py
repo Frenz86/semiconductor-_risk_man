@@ -55,14 +55,14 @@ CERTIFICATION_MULTIPLIERS = {
 
 # Soglie di classificazione redesign
 REDESIGN_THRESHOLDS = [
-    {'max_hours': 100, 'classification': 'TRIVIAL', 'color': 'GREEN',
-     'description': 'Component easily replaceable'},
-    {'max_hours': 500, 'classification': 'MODERATE', 'color': 'YELLOW',
-     'description': 'Replacement requires planning'},
-    {'max_hours': 2000, 'classification': 'COMPLEX', 'color': 'ORANGE',
-     'description': 'Replacement requires a dedicated project'},
-    {'max_hours': float('inf'), 'classification': 'CRITICAL', 'color': 'RED',
-     'description': 'Replacement is equivalent to a full redesign'},
+    {'max_hours': 100, 'classification': 'TRIVIALE', 'color': 'GREEN',
+     'description': 'Componente facilmente sostituibile'},
+    {'max_hours': 500, 'classification': 'MODERATO', 'color': 'YELLOW',
+     'description': 'Sostituzione richiede pianificazione'},
+    {'max_hours': 2000, 'classification': 'COMPLESSO', 'color': 'ORANGE',
+     'description': 'Sostituzione richiede un progetto dedicato'},
+    {'max_hours': float('inf'), 'classification': 'CRITICO', 'color': 'RED',
+     'description': 'Sostituzione equivalente a redesign completo'},
 ]
 
 # Ore-uomo per settimana di qualifica
@@ -200,22 +200,22 @@ def calculate_switching_cost(component: Dict[str, Any]) -> Dict[str, Any]:
 
         if proprietary == 'Y':
             total_hours = 200
-            classification = 'MODERATE'
+            classification = 'MODERATO'
             color = 'YELLOW'
-            description = 'Proprietary component (minimum estimate)'
-            breakdown.append({'item': 'Minimum estimate (proprietary)', 'hours': 200})
+            description = 'Componente proprietario (stima minima)'
+            breakdown.append({'item': 'Stima minima (proprietario)', 'hours': 200})
         elif 'mcu' in category or 'mpu' in category:
             total_hours = 80
-            classification = 'TRIVIAL'
+            classification = 'TRIVIALE'
             color = 'GREEN'
-            description = 'Minimum estimate for processor'
-            breakdown.append({'item': 'Minimum estimate (processor)', 'hours': 80})
+            description = 'Stima minima per processore'
+            breakdown.append({'item': 'Stima minima (processore)', 'hours': 80})
         elif 'passive' in category or 'connector' in category:
             total_hours = 8
-            classification = 'TRIVIAL'
+            classification = 'TRIVIALE'
             color = 'GREEN'
-            description = 'Passive/connector component'
-            breakdown.append({'item': 'Direct replacement', 'hours': 8})
+            description = 'Componente passivo/connettore'
+            breakdown.append({'item': 'Sostituzione diretta', 'hours': 8})
 
     return {
         'sw_porting_hours': round(sw_porting_hours, 1),
@@ -237,7 +237,7 @@ def estimate_redesign_risk(component: Dict[str, Any]) -> str:
     Restituisce la classificazione del rischio di redesign.
 
     Returns:
-        'TRIVIAL', 'MODERATE', 'COMPLEX', or 'CRITICAL'
+        'TRIVIALE', 'MODERATO', 'COMPLESSO', o 'CRITICO'
     """
     result = calculate_switching_cost(component)
     return result['classification']
