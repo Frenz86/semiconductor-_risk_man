@@ -298,17 +298,6 @@ For each impacted component, the simulator calculates:
 | No market data integration | Manual price and allocation entry | Octopart/SiliconExpert feed |
     """)
 
-    st.markdown("---")
-    st.subheader("Final Classification")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.markdown('<div class="risk-red"><h3>HIGH</h3><p>Score >= 55</p></div>', unsafe_allow_html=True)
-    with col2:
-        st.markdown('<div class="risk-yellow"><h3>MEDIUM</h3><p>Score 30-54</p></div>', unsafe_allow_html=True)
-    with col3:
-        st.markdown('<div class="risk-green"><h3>LOW</h3><p>Score < 30</p></div>', unsafe_allow_html=True)
-
-
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
