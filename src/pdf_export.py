@@ -332,11 +332,45 @@ def generate_pdf_report(batch_results, client_id, run_rate):
     elements.append(sw_detail_table)
 
     # ============================================================================
+    # SEZIONE 6 — AI RISK NARRATIVE (componenti HIGH risk)
+    # ============================================================================
+    high_risk_comps = [c for c in components_risk if c.get('color') == 'RED']
+    if high_risk_comps:
+        elements.append(PageBreak())
+        elements.append(Paragraph("6. AI RISK ANALYSIS — HIGH RISK COMPONENTS", header_style))
+        elements.append(Spacer(1, 0.2*cm))
+
+        try:
+            from narrative_engine import generate_risk_narrative, generate_bom_narrative_summary
+
+            narrative_style = ParagraphStyle(
+                'NarrativeStyle',
+                parent=styles['Normal'],
+                fontSize=9,
+                leading=13,
+                spaceAfter=8,
+                leftIndent=10,
+            )
+            bom_summary = generate_bom_narrative_summary(components_risk, bom_risk)
+            # Rimuovi markdown bold per PDF
+            bom_summary_clean = bom_summary.replace('**', '')
+            elements.append(Paragraph(bom_summary_clean, narrative_style))
+            elements.append(Spacer(1, 0.3*cm))
+
+            for comp in high_risk_comps[:10]:  # max 10 per non gonfiare il PDF
+                pn = comp.get('part_number', 'N/A')
+                narrative = generate_risk_narrative(comp)
+                narrative_clean = narrative.replace('**', '')
+                elements.append(Paragraph(f"• {narrative_clean}", narrative_style))
+        except ImportError:
+            elements.append(Paragraph("AI narrative module not available.", styles['Normal']))
+
+    # ============================================================================
     # COMPONENTI NON TROVATI
     # ============================================================================
     if not_found:
         elements.append(Spacer(1, 0.5*cm))
-        elements.append(Paragraph("6. COMPONENTI NON TROVATI", header_style))
+        elements.append(Paragraph("7. COMPONENTI NON TROVATI", header_style))
         elements.append(Paragraph(f"I seguenti part number non sono presenti nel database: {', '.join(not_found)}",
                                  styles['Normal']))
 

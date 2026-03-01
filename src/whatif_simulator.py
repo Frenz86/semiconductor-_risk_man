@@ -31,6 +31,7 @@ SCENARIO_TYPES = {
     'material_shortage': 'Carenza Materiale Tier-2',
     'distributor_outage': 'Stock-Out Distributore',
     'ems_overload': 'Overload EMS',
+    'tariff_impact': 'Dazio / Trade Tariff',
 }
 
 # Paesi a alto rischio con durate consigliate per blocco
@@ -172,6 +173,24 @@ def _is_component_affected(component: Dict[str, Any], scenario: Dict[str, Any]) 
             return True  # Scenario generico: tutti i componenti via EMS
         ems_name = str(_get_safe(component.get('EMS_Name', ''))).lower()
         return target_ems in ems_name
+
+    elif scenario_type == 'tariff_impact':
+        # Il componente è affetto se il suo Frontend_Country corrisponde al paese soggetto al dazio
+        origin = str(_get_safe(scenario.get('origin', ''))).lower().strip()
+        if not origin:
+            return True  # dazio globale → tutti i componenti
+        frontend = str(_get_safe(
+            component.get('Frontend_Country')
+            or component.get('frontend_country')
+            or component.get('Country of Manufacturing Plant 1')
+            or ''
+        )).lower().strip()
+        backend = str(_get_safe(
+            component.get('Backend_Country')
+            or component.get('backend_country')
+            or ''
+        )).lower().strip()
+        return origin in frontend or origin in backend
 
     return False
 
@@ -339,6 +358,13 @@ def calculate_adjusted_risk_score(
         base_increase = original_score * (risk_multiplier - 1) * 0.5
         adjusted = min(100, original_score + base_increase)
 
+    elif scenario_type == 'tariff_impact':
+        # Dazio: aumenta il costo unitario ma non il risk score strutturale.
+        # Penalità score proporzionale alla % dazio: +0.3 pt per ogni 1% di dazio (max +15)
+        tariff_pct = float(scenario.get('tariff_pct', 10))
+        tariff_risk_penalty = min(15, tariff_pct * 0.3)
+        adjusted = min(100, original_score + tariff_risk_penalty)
+
     else:  # Fallback per tipi di scenario sconosciuti
         adjusted = original_score
 
@@ -437,6 +463,12 @@ def simulate_disruption(
             component_value = unit_price * qty_in_bom
             financial_impact = weeks_lost * component_value
 
+            # Calcolo cost delta per scenari tariff_impact
+            tariff_cost_delta = 0.0
+            if scenario_type == 'tariff_impact':
+                tariff_pct = float(scenario.get('tariff_pct', 0))
+                tariff_cost_delta = round(unit_price * qty_in_bom * (tariff_pct / 100), 2)
+
             impacted.append({
                 'part_number': _get_safe(comp.get('Part Number', '')),
                 'supplier': _get_safe(comp.get('Supplier Name', 'N/A')),
@@ -451,6 +483,7 @@ def simulate_disruption(
                 'is_critical': buffer_impact['is_critical'],
                 'weeks_lost': weeks_lost,
                 'financial_impact': round(financial_impact, 2),
+                'tariff_cost_delta': tariff_cost_delta,
             })
 
             total_value_impact += component_value
@@ -480,6 +513,8 @@ def simulate_disruption(
     # Trova i componenti critici (si esaurisce subito)
     critical_components = [c for c in impacted if c['is_critical']]
 
+    total_tariff_delta = sum(c.get('tariff_cost_delta', 0) for c in impacted)
+
     return {
         'scenario_info': {
             'type': SCENARIO_TYPES.get(scenario_type, scenario_type),
@@ -487,6 +522,7 @@ def simulate_disruption(
             'duration_weeks': duration_weeks,
             'parameter': scenario.get('country', '')
                         or scenario.get('supplier', '')
+                        or scenario.get('tariff_pct', '')
                         or scenario.get('increase_percent', ''),
         },
         'impacted_components': impacted,
@@ -502,11 +538,13 @@ def simulate_disruption(
             'total_bom_value': round(total_value_impact, 2),
             'total_production_lost_weeks': round(total_production_lost / run_rate, 2) if run_rate else 0,
             'total_financial_impact': round(total_production_lost * 40, 2),
+            'total_tariff_cost_delta': round(total_tariff_delta, 2),
         },
         'financial_impact': {
             'total_value_at_risk': round(total_value_impact, 2),
             'production_lost_weeks': round(total_production_lost / run_rate, 2) if run_rate else 0,
             'estimated_revenue_loss': round(total_production_lost * 40, 2),
+            'tariff_cost_increase': round(total_tariff_delta, 2),
         },
         'risk_change': round(risk_change, 1),
         'critical_components': critical_components,
@@ -621,6 +659,24 @@ def get_predefined_scenarios() -> List[Dict[str, Any]]:
             'weeks': 8,
             'description': 'Tutti gli EMS al limite capacità (95%): rischi ritardi produzione',
             'risk_multiplier': 1.3,
+        },
+        {
+            'name': 'Dazio USA 25% — Prodotti Cinesi',
+            'type': 'tariff_impact',
+            'origin': 'China',
+            'tariff_pct': 25,
+            'weeks': 52,
+            'description': 'Dazio USA del 25% su componenti con origine/fab in Cina',
+            'risk_multiplier': 1.2,
+        },
+        {
+            'name': 'Dazio UE 15% — Semiconduttori Taiwan/Korea',
+            'type': 'tariff_impact',
+            'origin': 'Taiwan',
+            'tariff_pct': 15,
+            'weeks': 52,
+            'description': 'Dazio UE del 15% su semiconduttori prodotti in Taiwan e Korea',
+            'risk_multiplier': 1.1,
         },
     ]
 

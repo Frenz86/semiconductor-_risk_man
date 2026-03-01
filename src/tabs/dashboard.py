@@ -3,6 +3,7 @@ dashboard.py — Tab: render_tab_dashboard_esecutiva
 """
 
 from pdf_export import show_export_button
+from excel_export import show_excel_export_button
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -355,37 +356,57 @@ def render_tab_dashboard_esecutiva():
     st.markdown("---")
 
     # =============================================================================
-    # SEZIONE 6: TREND TEMPORE (simulato - base per futuro sviluppo)
+    # SEZIONE 6: TREND STORICO REALE
     # =============================================================================
     st.subheader("📈 Risk Trend Over Time")
 
-    st.info("""
-    **Note**: The historical trend requires saving analyses over time.
-    This section will show the evolution of BOM risk across different versions.
+    client_id = st.session_state.get('current_client')
+    history_df = st.session_state.db.get_analysis_history(client_id=client_id)
 
-    *To enable this feature, implement historical analysis saving.*
-    """)
+    if history_df.empty:
+        st.info("No historical data yet. Run multiple analyses over time to see the trend.")
+        col_trend1, col_trend2, col_trend3 = st.columns(3)
+        with col_trend1:
+            st.markdown("**Current Baseline**")
+            st.metric("Date", pd.Timestamp.now().strftime('%Y-%m-%d'))
+            st.metric("Average Score", f"{avg_score:.1f}")
+            st.metric("Critical Components", red_count)
+        with col_trend2:
+            st.markdown("**Target -3 months**")
+            st.metric("Target Score", f"{avg_score * 0.85:.1f}", "-15%")
+            st.metric("Target Critical", max(0, red_count - red_count // 2))
+        with col_trend3:
+            st.markdown("**Target -6 months**")
+            st.metric("Target Score", f"{avg_score * 0.7:.1f}", "-30%")
+            st.metric("Target Critical", max(0, red_count * 2 // 3))
+    else:
+        # Grafico linee interattivo con dati reali
+        fig_trend = px.line(
+            history_df,
+            x='Timestamp',
+            y='Avg_Risk_Score',
+            color='BOM_Name',
+            markers=True,
+            title='Average Risk Score Over Time',
+            labels={'Avg_Risk_Score': 'Avg Risk Score', 'Timestamp': 'Analysis Date', 'BOM_Name': 'BOM'},
+            color_discrete_sequence=px.colors.qualitative.Set2,
+        )
+        fig_trend.add_hline(y=55, line_dash='dash', line_color='red', annotation_text='HIGH threshold (55)')
+        fig_trend.add_hline(y=30, line_dash='dash', line_color='orange', annotation_text='MEDIUM threshold (30)')
+        fig_trend.update_layout(height=350, margin=dict(t=40, b=20))
+        st.plotly_chart(fig_trend, use_container_width=True)
 
-    # Mostra solo la situazione corrente come baseline
-    col_trend1, col_trend2, col_trend3 = st.columns(3)
-
-    with col_trend1:
-        st.markdown("**Current Baseline**")
-        st.metric("Date", pd.Timestamp.now().strftime('%Y-%m-%d'))
-        st.metric("Average Score", f"{avg_score:.1f}")
-        st.metric("Critical Components", red_count)
-
-    with col_trend2:
-        st.markdown("**Target -3 months**")
-        target_reduction = avg_score * 0.85  # -15%
-        st.metric("Target Score", f"{target_reduction:.1f}", "-15%")
-        st.metric("Target Critical", max(0, red_count - red_count // 2))
-
-    with col_trend3:
-        st.markdown("**Target -6 months**")
-        target_reduction_6m = avg_score * 0.7  # -30%
-        st.metric("Target Score", f"{target_reduction_6m:.1f}", "-30%")
-        st.metric("Target Critical", max(0, red_count * 2 // 3))
+        # KPI variazione rispetto alla prima analisi
+        first_score = history_df.iloc[0]['Avg_Risk_Score']
+        last_score = history_df.iloc[-1]['Avg_Risk_Score']
+        delta = last_score - first_score
+        col_h1, col_h2, col_h3 = st.columns(3)
+        with col_h1:
+            st.metric("Analyses Saved", len(history_df))
+        with col_h2:
+            st.metric("First Score", f"{first_score:.1f}")
+        with col_h3:
+            st.metric("Latest Score", f"{last_score:.1f}", f"{delta:+.1f} vs first")
 
     st.markdown("---")
 
@@ -394,7 +415,11 @@ def render_tab_dashboard_esecutiva():
     # =============================================================================
     st.subheader("📄 Export Dashboard")
 
-    show_export_button(batch, st.session_state.current_client, st.session_state.run_rate, key="export_dashboard")
+    col_exp1, col_exp2 = st.columns(2)
+    with col_exp1:
+        show_export_button(batch, st.session_state.current_client, st.session_state.run_rate, key="export_dashboard")
+    with col_exp2:
+        show_excel_export_button(batch, st.session_state.current_client, st.session_state.run_rate, key="excel_dashboard")
 
 
 # =============================================================================

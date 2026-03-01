@@ -44,6 +44,8 @@ SHEET_SUPPLIER_PROFILES = 'Supplier_Profiles'
 SHEET_MARKET_SHORTAGE = 'Market_Shortage'
 # v4.1 - IP Dependencies
 SHEET_IP_DEPENDENCIES = 'IP_Dependencies'
+# v4.2 - Historical Trend
+SHEET_ANALYSIS_HISTORY = 'Analysis_History'
 
 # Colonne obbligatorie per ogni foglio
 PART_NUMBERS_COLUMNS = [
@@ -229,6 +231,22 @@ IP_DEPENDENCIES_COLUMNS = [
     'Updated_at',
 ]
 
+# v4.2 - Storico analisi
+ANALYSIS_HISTORY_COLUMNS = [
+    'Snapshot_ID',            # Auto-generato: SNAP_001, SNAP_002, ...
+    'Client_ID',              # FK -> Clients
+    'Timestamp',              # datetime ISO
+    'BOM_Name',               # Nome BOM / file caricato
+    'Avg_Risk_Score',         # float, media ponderata
+    'High_Risk_Count',        # int
+    'Medium_Risk_Count',      # int
+    'Low_Risk_Count',         # int
+    'SPOF_Count',             # int
+    'Total_Components',       # int
+    'BOM_Value',              # float $
+    'Notes',                  # es. "after TSMC qualification"
+]
+
 
 # =============================================================================
 # CLASSE PRINCIPALE
@@ -301,6 +319,10 @@ class PartNumberDatabase:
             # v4.1 - IP Dependencies
             pd.DataFrame(columns=IP_DEPENDENCIES_COLUMNS).to_excel(
                 writer, sheet_name=SHEET_IP_DEPENDENCIES, index=False
+            )
+            # v4.2 - Analysis History
+            pd.DataFrame(columns=ANALYSIS_HISTORY_COLUMNS).to_excel(
+                writer, sheet_name=SHEET_ANALYSIS_HISTORY, index=False
             )
 
     def _load_sheet(self, sheet_name: str) -> pd.DataFrame:
@@ -1500,3 +1522,81 @@ class PartNumberDatabase:
         stats['total_supplier_profiles'] = len(df_sup) if not df_sup.empty else 0
 
         return stats
+
+    # -------------------------------------------------------------------------
+    # METODI PUBBLICI - ANALYSIS HISTORY (v4.2)
+    # -------------------------------------------------------------------------
+
+    def save_analysis_snapshot(self, client_id: str, batch_results: dict, bom_name: str = '', notes: str = '') -> bool:
+        """
+        Salva uno snapshot dell'analisi BOM nel foglio Analysis_History.
+
+        Args:
+            client_id: ID del cliente
+            batch_results: Risultati batch da _run_batch_analysis()
+            bom_name: Nome della BOM o del file caricato
+            notes: Note opzionali
+
+        Returns:
+            True se salvato con successo
+        """
+        try:
+            df = self._load_sheet(SHEET_ANALYSIS_HISTORY)
+            if df.empty:
+                df = pd.DataFrame(columns=ANALYSIS_HISTORY_COLUMNS)
+
+            risks = batch_results.get('components_risk', [])
+            bom_risk = batch_results.get('bom_risk', {})
+
+            high_count = sum(1 for r in risks if r.get('color') == 'RED')
+            med_count = sum(1 for r in risks if r.get('color') == 'YELLOW')
+            low_count = sum(1 for r in risks if r.get('color') == 'GREEN')
+            avg_score = sum(r.get('score', 0) for r in risks) / len(risks) if risks else 0
+
+            # Genera ID univoco
+            existing_ids = df['Snapshot_ID'].dropna().tolist() if 'Snapshot_ID' in df.columns else []
+            snap_num = len(existing_ids) + 1
+            snap_id = f"SNAP_{snap_num:04d}"
+
+            new_row = {
+                'Snapshot_ID': snap_id,
+                'Client_ID': client_id,
+                'Timestamp': datetime.now().isoformat(),
+                'BOM_Name': bom_name,
+                'Avg_Risk_Score': round(avg_score, 2),
+                'High_Risk_Count': high_count,
+                'Medium_Risk_Count': med_count,
+                'Low_Risk_Count': low_count,
+                'SPOF_Count': len(bom_risk.get('spofs', [])),
+                'Total_Components': len(risks),
+                'BOM_Value': round(bom_risk.get('total_bom_value', 0), 2),
+                'Notes': notes,
+            }
+            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+            self._save_sheet(df, SHEET_ANALYSIS_HISTORY)
+            return True
+        except Exception:
+            return False
+
+    def get_analysis_history(self, client_id: Optional[str] = None) -> pd.DataFrame:
+        """
+        Restituisce lo storico delle analisi, opzionalmente filtrato per cliente.
+
+        Args:
+            client_id: se None, restituisce tutti i clienti
+
+        Returns:
+            DataFrame con le colonne di ANALYSIS_HISTORY_COLUMNS, ordinato per Timestamp
+        """
+        df = self._load_sheet(SHEET_ANALYSIS_HISTORY)
+        if df.empty:
+            return pd.DataFrame(columns=ANALYSIS_HISTORY_COLUMNS)
+
+        if client_id:
+            df = df[df['Client_ID'].astype(str) == str(client_id)]
+
+        if 'Timestamp' in df.columns:
+            df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+            df = df.sort_values('Timestamp')
+
+        return df.reset_index(drop=True)

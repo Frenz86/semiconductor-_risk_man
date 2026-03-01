@@ -4,6 +4,8 @@ analisi_multipla.py — Tab: _extract_bom_client_data, _save_bom_client_data, re
 
 from pathlib import Path
 from pdf_export import show_export_button
+from excel_export import show_excel_export_button
+from narrative_engine import generate_risk_narrative
 from risk_engine import calculate_component_risk
 from typing import List, Any, Dict
 import pandas as pd
@@ -143,6 +145,13 @@ def render_tab_analisi_multipla():
                     saved = _save_bom_client_data(qty_data, batch)
                     if saved > 0:
                         st.caption(f"BOM quantities saved in Client_Data for {saved} components")
+
+                    if st.session_state.get('current_client') and batch:
+                        st.session_state.db.save_analysis_snapshot(
+                            client_id=st.session_state.current_client,
+                            batch_results=batch,
+                            bom_name=selected_bom,
+                        )
                 else:
                     st.error("Column 'Part Number' not found in the file.")
             except Exception as e:
@@ -224,6 +233,13 @@ def render_tab_analisi_multipla():
                         saved = _save_bom_client_data(qty_data, batch)
                         if saved > 0:
                             st.caption(f"BOM quantities saved in Client_Data for {saved} components")
+
+                        if st.session_state.get('current_client') and batch:
+                            st.session_state.db.save_analysis_snapshot(
+                                client_id=st.session_state.current_client,
+                                batch_results=batch,
+                                bom_name=uploaded_file.name,
+                            )
                 else:
                     st.error("Column 'Part Number' not found in the file. Columns found: " +
                              ", ".join(str(c) for c in df_uploaded.columns[:10]))
@@ -235,9 +251,13 @@ def render_tab_analisi_multipla():
     if batch:
         st.markdown("---")
 
-        # Pulsante export PDF
+        # Pulsanti export
         st.subheader("📄 Export Report")
-        show_export_button(batch, st.session_state.current_client, st.session_state.run_rate, key="export_tab_multipla")
+        col_exp1, col_exp2 = st.columns(2)
+        with col_exp1:
+            show_export_button(batch, st.session_state.current_client, st.session_state.run_rate, key="export_tab_multipla")
+        with col_exp2:
+            show_excel_export_button(batch, st.session_state.current_client, st.session_state.run_rate, key="excel_tab_multipla")
         st.markdown("---")
 
         st.success(f"Found **{batch['found_count']}** of **{batch['total_count']}** part numbers")
@@ -345,6 +365,11 @@ def render_tab_analisi_multipla():
                     render_geo_detail(geo)
                     st.markdown(f"**Man-Hours:** {risk['man_hours']}h")
                     st.markdown(f"**Switching:** {sw.get('total_switching_hours', 0):.0f}h ({sw_class})")
+
+                if risk['color'] == 'RED':
+                    st.markdown("---")
+                    st.markdown("**AI Risk Summary:**")
+                    st.info(generate_risk_narrative(risk))
 
         # PN non trovati
         if batch['not_found']:
