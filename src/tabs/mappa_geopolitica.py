@@ -77,7 +77,7 @@ def render_tab_mappa_geopolitica():
         if geo_table:
             df_geo = pd.DataFrame(geo_table)
             df_geo = df_geo.sort_values('Geo Score', ascending=False)
-            st.dataframe(df_geo, width=True, hide_index=True)
+            st.dataframe(df_geo, use_container_width=True, hide_index=True)
 
             # Bar chart
             fig_geo = go.Figure()
@@ -99,7 +99,7 @@ def render_tab_mappa_geopolitica():
             )
             fig_geo.add_hline(y=20, line_dash="dash", line_color="red", annotation_text="CRITICAL")
             fig_geo.add_hline(y=12, line_dash="dash", line_color="orange", annotation_text="HIGH")
-            st.plotly_chart(fig_geo, width=True)
+            st.plotly_chart(fig_geo, use_container_width=True)
     else:
         st.info("Run a **Multiple Analysis** (Tab 2) first to display the geopolitical map.")
 

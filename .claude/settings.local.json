@@ -10,7 +10,9 @@
       "Bash(grep -n \"calculate_component_risk\" /c/Users/danie/Desktop/semiconductor_risk_man/src/tabs/*.py)",
       "Bash(python -m py_compile src/pn_lookup.py src/risk_engine.py src/tier2_visibility.py src/tabs/tier2_visibility.py src/tabs/gestione_database.py src/tabs/analisi_multipla.py src/tabs/analisi_rapida.py)",
       "Bash(python3:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(find src/tabs -name \"*.py\" -type f -exec sed -i 's/width=True/use_container_width=True/g' {} +)",
+      "Bash(xargs -0 perl -i -pe 's/width=True/use_container_width=True/g')"
     ]
   }
 }

@@ -153,7 +153,7 @@ def render_tab_albero_dipendenze():
                     if chain_data:
                         df_chain = pd.DataFrame(chain_data)
                         df_chain = df_chain.sort_values('Chain Score', ascending=False)
-                        st.dataframe(df_chain, use_container_width=True, hide_index=True)
+                        st.dataframe(df_chain, use_container_use_container_width=True, hide_index=True)
 
                     # Pair risks
                     pair_risks = []

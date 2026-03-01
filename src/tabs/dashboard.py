@@ -126,7 +126,7 @@ def render_tab_dashboard_esecutiva():
             hole=0.4
         )
         fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-        st.plotly_chart(fig_pie, use_container_width=True)
+        st.plotly_chart(fig_pie, use_container_use_container_width=True)
 
     with chart_col2:
         # Bar chart fornitori a rischio
@@ -149,7 +149,7 @@ def render_tab_dashboard_esecutiva():
             )
             fig_supp.update_traces(texttemplate='%{text:.1f}', textposition='auto')
             fig_supp.update_layout(yaxis={'categoryorder': 'total ascending'})
-            st.plotly_chart(fig_supp, use_container_width=True)
+            st.plotly_chart(fig_supp, use_container_use_container_width=True)
 
     st.markdown("---")
 
@@ -189,7 +189,7 @@ def render_tab_dashboard_esecutiva():
             lambda row: [highlight_risk(row[val], val) for val in row.index],
             axis=1
         )
-        st.dataframe(styled_df, width=True, hide_index=True)
+        st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
     st.markdown("---")
 
@@ -233,7 +233,7 @@ def render_tab_dashboard_esecutiva():
         return [''] * len(row)
 
     styled_top10 = df_top10.style.apply(color_row, axis=1)
-    st.dataframe(styled_top10, width=True, hide_index=True)
+    st.dataframe(styled_top10, use_container_width=True, hide_index=True)
 
     st.markdown("---")
 

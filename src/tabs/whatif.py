@@ -411,7 +411,7 @@ def render_tab_simulatore_whatif():
                         color_score,
                         subset=['Orig. Score', 'New Score']
                     ),
-                    width=True,
+                    use_container_width=True,
                     hide_index=True
                 )
 

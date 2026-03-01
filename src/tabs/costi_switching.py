@@ -62,7 +62,7 @@ def render_tab_costi_switching():
             st.metric("TRIVIAL", trivial)
 
         # Table
-        st.dataframe(df_sw, width=True, hide_index=True)
+        st.dataframe(df_sw, use_container_width=True, hide_index=True)
 
         # Horizontal bar chart
         fig_sw = go.Figure()
@@ -92,7 +92,7 @@ def render_tab_costi_switching():
         fig_sw.add_vline(x=100, line_dash="dash", line_color="green", annotation_text="TRIVIAL")
         fig_sw.add_vline(x=500, line_dash="dash", line_color="orange", annotation_text="MODERATE")
         fig_sw.add_vline(x=2000, line_dash="dash", line_color="red", annotation_text="COMPLEX")
-        st.plotly_chart(fig_sw, width=True)
+        st.plotly_chart(fig_sw, use_container_width=True)
 
         # Breakdown detail for critical/complex components
         critical_components = [r for r in components_risk if r.get('switching_cost', {}).get('classification') in ('CRITICO', 'COMPLESSO')]

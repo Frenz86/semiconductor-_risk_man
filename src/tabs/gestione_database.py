@@ -43,7 +43,7 @@ def render_tab_gestione_database():
         if stats['suppliers']:
             st.subheader("Top Suppliers")
             df_sup = pd.DataFrame(list(stats['suppliers'].items()), columns=['Supplier', 'Count']).head(10)
-            st.dataframe(df_sup, width=True)
+            st.dataframe(df_sup, use_container_width=True)
 
     with tab6_2:
         st.subheader("Add New Part Number")
@@ -156,7 +156,7 @@ def render_tab_gestione_database():
         if search_pattern:
             results = st.session_state.db.search_similar(search_pattern)
             if results:
-                st.dataframe(pd.DataFrame(results), width=True)
+                st.dataframe(pd.DataFrame(results), use_container_width=True)
             else:
                 st.info("No results")
 
@@ -165,7 +165,7 @@ def render_tab_gestione_database():
 
         clients = st.session_state.db.get_all_clients()
         if clients:
-            st.dataframe(pd.DataFrame(clients), width=True)
+            st.dataframe(pd.DataFrame(clients), use_container_width=True)
 
         st.markdown("---")
         st.subheader("Add New Client")
@@ -195,7 +195,7 @@ def render_tab_gestione_database():
 
         existing_ems = st.session_state.db.get_all_ems_providers()
         if existing_ems:
-            st.dataframe(pd.DataFrame(existing_ems), width=True)
+            st.dataframe(pd.DataFrame(existing_ems), use_container_width=True)
 
             st.markdown("**Remove EMS Provider:**")
             ems_ids = [e.get('EMS_ID', '') for e in existing_ems]
@@ -257,7 +257,7 @@ def render_tab_gestione_database():
                 st.dataframe(pd.DataFrame(existing_dists)[[
                     'Distributor_ID', 'Name', 'Country', 'Financial_Health',
                     'Lead_Time_Markup_Weeks', 'Stock_Level_Weeks_Coverage'
-                ]], width=True)
+                ]], use_container_width=True)
             else:
                 st.info("No distributor registered")
 
@@ -389,7 +389,7 @@ def render_tab_gestione_database():
             for pn, sources in all_alt.items():
                 for s in sources:
                     rows.append({'Part Number': pn, **{k: v for k, v in s.items() if k != 'Part_Number'}})
-            st.dataframe(pd.DataFrame(rows), width=True)
+            st.dataframe(pd.DataFrame(rows), use_container_width=True)
         else:
             st.info("No alternative source registered")
 
@@ -411,7 +411,7 @@ def render_tab_gestione_database():
         if existing_profiles:
             st.dataframe(pd.DataFrame(existing_profiles)[[
                 'Supplier_Name', 'Primary_Fab', 'Primary_Fab_Country', 'Wafer_Source'
-            ]], width=True)
+            ]], use_container_width=True)
 
         st.markdown("---")
         st.subheader("Add / Update Supplier Profile")
@@ -476,7 +476,7 @@ def render_tab_gestione_database():
                     'Notes': str(row.get('Notes', '')),
                     'Source': str(row.get('Source', '')),
                 })
-            st.dataframe(pd.DataFrame(rows_sh), width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(rows_sh), use_container_width=True, hide_index=True)
         else:
             st.info("No shortage registered. The platform considers all components available.")
 
@@ -686,7 +686,7 @@ def render_tab_gestione_database():
                         })
 
                 df_ip = pd.DataFrame(rows)
-                st.dataframe(df_ip, width=True, hide_index=True)
+                st.dataframe(df_ip, use_container_width=True, hide_index=True)
 
                 # Rimozione
                 st.markdown("---")
@@ -724,7 +724,7 @@ def render_tab_gestione_database():
                 try:
                     df_import = pd.read_csv(uploaded_file)
                     st.write("**Preview:**")
-                    st.dataframe(df_import.head(5), width=True)
+                    st.dataframe(df_import.head(5), use_container_width=True)
 
                     if st.button("✅ Import All Rows", type="primary"):
                         imported = 0
