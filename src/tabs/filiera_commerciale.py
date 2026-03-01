@@ -76,7 +76,7 @@ def render_tab_filiera_commerciale():
                 elif score >= 12:
                     return ['background-color: #ffbb3333'] * len(row)
                 return [''] * len(row)
-            st.dataframe(df_ems.style.apply(_color_ems, axis=1), use_container_width=True, hide_index=True)
+            st.dataframe(df_ems.style.apply(_color_ems, axis=1), width=True, hide_index=True)
         else:
             st.info("No component uses EMS (or EMS_Used field not set)")
 
@@ -129,7 +129,7 @@ def render_tab_filiera_commerciale():
                 elif score >= 10:
                     return ['background-color: #ffbb3333'] * len(row)
                 return [''] * len(row)
-            st.dataframe(df_dist.style.apply(_color_dist, axis=1), use_container_width=True, hide_index=True)
+            st.dataframe(df_dist.style.apply(_color_dist, axis=1), width=True, hide_index=True)
 
         if dist_analysis['top_shared_distributors']:
             st.markdown("---")
@@ -199,7 +199,7 @@ def render_tab_filiera_commerciale():
             for pn_key, sources in all_alt.items():
                 for s in sources:
                     rows.append({'Part Number': pn_key, **{k: v for k, v in s.items() if k != 'Part_Number'}})
-            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+            st.dataframe(pd.DataFrame(rows), width=True)
         else:
             st.info(
                 "No alternative sources in the DB. "
@@ -259,7 +259,7 @@ def render_tab_filiera_commerciale():
                     return [''] * len(row)
                 st.dataframe(
                     affected_df.style.apply(_color_critical, axis=1),
-                    use_container_width=True, hide_index=True
+                    width=True, hide_index=True
                 )
             else:
                 st.success(f"No component impacted by a stock-out of {target_dist}")
@@ -340,7 +340,7 @@ def render_tab_filiera_commerciale():
                 if s == 'Shortage': return ['background-color: #ff888833'] * len(row)
                 if s == 'Tight':    return ['background-color: #ffbb3333'] * len(row)
                 return [''] * len(row)
-            st.dataframe(df_sh.style.apply(_color_severity, axis=1), use_container_width=True, hide_index=True)
+            st.dataframe(df_sh.style.apply(_color_severity, axis=1), width=True, hide_index=True)
         else:
             st.success("No BOM component is impacted by active market shortages.")
 
@@ -365,4 +365,4 @@ def _render_alternatives_table_filiera(alternatives: list) -> None:
             'Fab Country':   alt['frontend_country'],
             'Qualification': alt['qualification'],
         })
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(rows), width=True, hide_index=True)

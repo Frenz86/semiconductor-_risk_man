@@ -23,7 +23,7 @@ def render_tab_analisi_rapida():
     with col2:
         st.write("")
         st.write("")
-        analyze_btn = st.button("Analyze", type="primary", use_container_width=True)
+        analyze_btn = st.button("Analyze", type="primary", width=True)
 
     if analyze_btn and pn_input:
         component_data = st.session_state.db.lookup_part_number(
@@ -208,6 +208,6 @@ def _render_alternatives_table(alternatives: list) -> None:
             'LT (wk)':         alt['lead_time_weeks'] if alt['lead_time_weeks'] else '—',
         })
 
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(rows), width=True, hide_index=True)
 
 

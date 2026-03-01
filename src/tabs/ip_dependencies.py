@@ -109,7 +109,7 @@ def render_tab_ip_dependencies():
             })
 
         df_vendors = pd.DataFrame(vendor_data)
-        st.dataframe(df_vendors, use_container_width=True, hide_index=True)
+        st.dataframe(df_vendors, width=True, hide_index=True)
     else:
         st.info("No IP vendors in this BOM")
 

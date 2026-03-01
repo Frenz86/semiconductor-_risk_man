@@ -77,7 +77,7 @@ def render_tab_tier2_visibility():
                 'Criticality': b['criticality'],
                 'Substitutability': b['substitutability'],
             })
-        st.dataframe(pd.DataFrame(bottleneck_rows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(bottleneck_rows), width=True, hide_index=True)
 
     # =========================================================================
     # SECTION 2: CONCENTRATION HEATMAP BY COUNTRY
@@ -98,7 +98,7 @@ def render_tab_tier2_visibility():
                 aspect='auto',
             )
             fig_heat.update_layout(height=max(400, len(pivot) * 30))
-            st.plotly_chart(fig_heat, use_container_width=True)
+            st.plotly_chart(fig_heat, width=True)
     else:
         st.info("No data available for the heatmap.")
 
@@ -214,7 +214,7 @@ def render_tab_tier2_visibility():
         suppliers = db.get_tier2_suppliers()
         if suppliers:
             df_suppliers = pd.DataFrame(suppliers)
-            st.dataframe(df_suppliers, use_container_width=True, hide_index=True)
+            st.dataframe(df_suppliers, width=True, hide_index=True)
 
             # Remove supplier
             supplier_ids = [s.get('Tier2_Supplier_ID', '') for s in suppliers]
@@ -286,7 +286,7 @@ def render_tab_tier2_visibility():
                             'Country': m.get('Custom_Country', 'Default'),
                         })
                 if rows:
-                    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                    st.dataframe(pd.DataFrame(rows), width=True, hide_index=True)
                 else:
                     st.info("No custom associations.")
             else:

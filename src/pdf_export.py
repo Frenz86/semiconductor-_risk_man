@@ -391,7 +391,7 @@ def show_export_button(batch_results, client_id, run_rate, key=None):
         data=pdf_data,
         file_name=filename,
         mime="application/pdf",
-        use_container_width=True,
+        width=True,
         type="primary",
         key=button_key
     )

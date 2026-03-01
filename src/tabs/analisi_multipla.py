@@ -287,7 +287,7 @@ def render_tab_analisi_multipla():
                 },
                 title="Distribution by Risk Level"
             )
-            st.plotly_chart(fig_pie, use_container_width=True)
+            st.plotly_chart(fig_pie, width=True)
 
         with col2:
             sw_counts = {'TRIVIALE': 0, 'MODERATO': 0, 'COMPLESSO': 0, 'CRITICO': 0}
@@ -307,7 +307,7 @@ def render_tab_analisi_multipla():
                 },
                 title="Switching Cost Distribution"
             )
-            st.plotly_chart(fig_sw, use_container_width=True)
+            st.plotly_chart(fig_sw, width=True)
 
         # Dettaglio rischi per componente
         st.subheader("Risk Detail by Component")

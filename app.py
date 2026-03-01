@@ -121,7 +121,7 @@ def show_login_page():
     with st.form("login_form"):
         username = st.text_input("Username", placeholder="Enter username")
         password = st.text_input("Password", type="password", placeholder="Enter password")
-        submit = st.form_submit_button("Login", width=True)
+        submit = st.form_submit_button("Login", use_container_width=True)
 
         if submit:
             if username and password:
@@ -213,7 +213,7 @@ def save_run_rate_to_db():
 with st.sidebar:
     # User info e logout
     st.markdown(f"👤 **User:** {st.session_state.username}")
-    if st.button("Logout", width=True):
+    if st.button("Logout", use_container_width=True):
         st.session_state.logged_in = False
         st.session_state.username = None
         st.rerun()
