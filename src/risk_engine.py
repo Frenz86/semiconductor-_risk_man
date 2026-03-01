@@ -23,6 +23,14 @@ from dependency_graph import (
     build_dependency_graph, calculate_chain_risk,
     find_single_points_of_failure, render_dependency_tree
 )
+
+# v4.3 - Importa costanti P×I matrix
+from grc_constants import (
+    BOM_VALUE_THRESHOLDS,
+    PX_SCORE_RED_THRESHOLD,
+    PX_SCORE_YELLOW_THRESHOLD,
+    PX_SCORE_MAX,
+)
 from tier2_visibility import calculate_tier2_risk, calculate_ip_risk
 from ems_risk import calculate_ems_risk
 from distributor_risk import calculate_distributor_risk
@@ -114,13 +122,14 @@ def _calculate_probability_impact(row: Dict[str, Any], score: float, is_spof: bo
     qty = float(_get_safe_value(row, 'How Many Device of this specific PN are in the BOM?', 1) or 1)
     bom_value = unit_price * qty
 
-    if bom_value >= 500:
+    # Usa costanti centralizzate per BOM value thresholds
+    if bom_value >= BOM_VALUE_THRESHOLDS['very_high']:
         impact = 5
-    elif bom_value >= 200:
+    elif bom_value >= BOM_VALUE_THRESHOLDS['high']:
         impact = 4
-    elif bom_value >= 50:
+    elif bom_value >= BOM_VALUE_THRESHOLDS['medium']:
         impact = 3
-    elif bom_value >= 10:
+    elif bom_value >= BOM_VALUE_THRESHOLDS['low']:
         impact = 2
     else:
         impact = 1
@@ -136,10 +145,10 @@ def _calculate_probability_impact(row: Dict[str, Any], score: float, is_spof: bo
 
     px_score = prob * impact
 
-    # Colore heat map: zona rossa P×I >= 12, gialla >= 6, verde < 6
-    if px_score >= 12:
+    # Usa costanti centralizzate per colori heat map
+    if px_score >= PX_SCORE_RED_THRESHOLD:
         px_color = 'RED'
-    elif px_score >= 6:
+    elif px_score >= PX_SCORE_YELLOW_THRESHOLD:
         px_color = 'YELLOW'
     else:
         px_color = 'GREEN'

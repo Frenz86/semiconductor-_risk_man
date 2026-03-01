@@ -22,6 +22,17 @@ from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 import shutil
 
+# v4.3 - Importa costanti e tipi GRC
+from grc_constants import (
+    DEFAULT_RISK_APPETITE,
+    DEFAULT_RISK_APPETITE_HIGH,
+    DEFAULT_RISK_APPETITE_MEDIUM,
+    validate_risk_appetite_value,
+    format_owner_change,
+    ActivityLogEntry,
+    RiskAppetite,
+)
+
 
 # =============================================================================
 # CONFIGURAZIONE
@@ -711,21 +722,17 @@ class PartNumberDatabase:
         Returns:
             {'high': int, 'medium': int} — soglie RED e YELLOW
         """
-        defaults = {'high': 55, 'medium': 30}
         if not client_id:
-            return defaults
+            return DEFAULT_RISK_APPETITE.copy()
         client = self.get_client(client_id)
         if not client:
-            return defaults
+            return DEFAULT_RISK_APPETITE.copy()
         high = client.get('Risk_Appetite_High')
         medium = client.get('Risk_Appetite_Medium')
-        try:
-            return {
-                'high': int(float(high)) if high is not None and str(high) not in ('', 'nan') else 55,
-                'medium': int(float(medium)) if medium is not None and str(medium) not in ('', 'nan') else 30,
-            }
-        except (ValueError, TypeError):
-            return defaults
+        return {
+            'high': validate_risk_appetite_value(high, DEFAULT_RISK_APPETITE_HIGH),
+            'medium': validate_risk_appetite_value(medium, DEFAULT_RISK_APPETITE_MEDIUM),
+        }
 
     def update_client_risk_appetite(self, client_id: str, high: int, medium: int) -> bool:
         """
@@ -1798,6 +1805,69 @@ class PartNumberDatabase:
             return True
         except Exception:
             return False
+
+    def log_actions_batch(
+        self,
+        actions: List[Dict[str, Any]],
+    ) -> int:
+        """
+        Aggiunge PIÙ righe di log in una SINGOLA operazione Excel (fix bottleneck).
+
+        Molto più efficiente di chiamare log_action() più volte - evita
+        il sovraccarico di caricare/salvare il file Excel ripetutamente.
+
+        Args:
+            actions: Lista di dizionari con chiavi:
+                - client_id (str): ID cliente
+                - action_type (str): tipo azione
+                - target_pn (str, optional): Part Number
+                - old_value (str, optional): valore precedente
+                - new_value (str, optional): valore nuovo
+                - notes (str, optional): note
+                - user (str, optional): utente (default 'system')
+
+        Returns:
+            Numero di righe aggiunte (0 se errore)
+
+        Example:
+            actions = [
+                {'client_id': 'C1', 'action_type': 'owner_assigned', 'target_pn': 'PN1', ...},
+                {'client_id': 'C1', 'action_type': 'threshold_changed', ...},
+            ]
+            count = db.log_actions_batch(actions)
+        """
+        try:
+            df = self._load_sheet(SHEET_ACTIVITY_LOG)
+            if df.empty:
+                df = pd.DataFrame(columns=ACTIVITY_LOG_COLUMNS)
+
+            # Ottieni prossimo ID di base
+            existing_ids = df['Log_ID'].dropna().astype(str).tolist() if 'Log_ID' in df.columns else []
+            base_num = len(existing_ids) + 1
+
+            # Prepara tutte le nuove righe
+            new_rows = []
+            timestamp = datetime.now().isoformat()
+            for i, action in enumerate(actions):
+                log_id = f'LOG_{base_num + i:04d}'
+                new_rows.append({
+                    'Log_ID': log_id,
+                    'Client_ID': action.get('client_id', ''),
+                    'Timestamp': timestamp,
+                    'User': action.get('user', 'system'),
+                    'Action_Type': action.get('action_type', ''),
+                    'Target_PN': action.get('target_pn', ''),
+                    'Old_Value': str(action.get('old_value', '')) if action.get('old_value') is not None else '',
+                    'New_Value': str(action.get('new_value', '')) if action.get('new_value') is not None else '',
+                    'Notes': action.get('notes', ''),
+                })
+
+            # Singola operazione concat + save
+            df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
+            self._save_sheet(df, SHEET_ACTIVITY_LOG)
+            return len(new_rows)
+        except Exception:
+            return 0
 
     def get_activity_log(
         self,
