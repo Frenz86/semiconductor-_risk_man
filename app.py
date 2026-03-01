@@ -1,4 +1,6 @@
 """
+https://semiconductor-riskman.streamlit.app/
+
 Supply Chain Risk Assessment Tool v4.0 - Resilience Platform
 
 Per eseguire:

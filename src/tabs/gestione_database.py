@@ -10,10 +10,10 @@ def render_tab_gestione_database():
     """Tab 6: Gestione Database Part Numbers"""
     st.header("Database Management — Part Numbers")
 
-    tab6_1, tab6_2, tab6_3, tab6_ems, tab6_dist, tab6_alt, tab6_sup, tab6_shortage = st.tabs([
+    tab6_1, tab6_2, tab6_3, tab6_ems, tab6_dist, tab6_alt, tab6_sup, tab6_ip, tab6_shortage = st.tabs([
         "Statistics", "Add Part Number", "Client Management",
         "EMS Providers", "Distributors", "Alternative Sources", "Supplier Profiles",
-        "Market Shortage"
+        "IP Dependencies", "Market Shortage"
     ])
 
     with tab6_1:
@@ -533,6 +533,224 @@ def render_tab_gestione_database():
             "Tight +2pt · Shortage +5pt · Critical +8pt. "
             "Alternatives with interfaces not in shortage are promoted in the compatibility score."
         )
+
+    with tab6_ip:
+        st.subheader("IP/SW Dependencies Management")
+        st.markdown(
+            "Track software IP dependencies (peripheral libraries, firmware stacks, drivers, EDA IP) "
+            "and their impact on development risk. The risk engine automatically increases component risk "
+            "for abandoned, deprecated, or proprietary-vendor-locked IPs."
+        )
+
+        db = st.session_state.db
+
+        # Sub-tabs per gestione IP dependencies
+        ip_subtab1, ip_subtab2, ip_subtab3 = st.tabs(["Add IP Dependency", "View All", "Bulk Import"])
+
+        # ======================================================================
+        # Sub-tab 1: Add / Update IP Dependency
+        # ======================================================================
+        with ip_subtab1:
+            st.markdown("**Add or update an IP dependency for a Part Number**")
+
+            with st.form("add_ip_dep_form"):
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    # Carica PN dal DB (get_all_part_numbers ritorna List[str])
+                    all_pns = db.get_all_part_numbers()
+                    pn_options = sorted(set(str(p).upper() for p in all_pns if p))
+
+                    selected_pn = st.selectbox(
+                        "Part Number *",
+                        pn_options,
+                        key="ip_pn_select"
+                    )
+
+                    ip_name = st.text_input(
+                        "IP Name *",
+                        placeholder="e.g. USB3.0 PHY Stack, TouchPad Firmware"
+                    )
+
+                    ip_type = st.selectbox(
+                        "IP Type *",
+                        [
+                            "Peripheral_Library",
+                            "Firmware_Stack",
+                            "RTOS",
+                            "Driver",
+                            "EDA_IP",
+                            "Design_Kit",
+                            "Protocol_Stack"
+                        ]
+                    )
+
+                with col2:
+                    ip_vendor = st.text_input(
+                        "IP Vendor *",
+                        placeholder="e.g. Synaptics, Cadence, ARM, SEGGER"
+                    )
+
+                    license_type = st.selectbox(
+                        "License Type *",
+                        ["Proprietary", "Open_Source", "Custom", "BSD", "MIT"]
+                    )
+
+                    maintenance = st.selectbox(
+                        "Maintenance Status *",
+                        ["Active", "Maintenance_Only", "Deprecated", "Abandoned"]
+                    )
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    last_release = st.number_input(
+                        "Last Release Year",
+                        min_value=2000,
+                        max_value=2026,
+                        value=2026
+                    )
+
+                    vendor_alts = st.number_input(
+                        "Vendor Alternatives Available",
+                        min_value=0,
+                        max_value=10,
+                        value=0
+                    )
+
+                with col2:
+                    notes = st.text_area(
+                        "Notes",
+                        placeholder="e.g. Critical for USB interface compatibility"
+                    )
+
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    submitted = st.form_submit_button("💾 Save IP Dependency", type="primary")
+                with col_btn2:
+                    st.form_submit_button("Cancel")
+
+                if submitted:
+                    if not selected_pn or not ip_name or not ip_vendor:
+                        st.error("Part Number, IP Name, and IP Vendor are required")
+                    else:
+                        ip_data = {
+                            'Part_Number': selected_pn.upper(),
+                            'IP_Name': ip_name,
+                            'IP_Type': ip_type,
+                            'IP_Vendor': ip_vendor,
+                            'License_Type': license_type,
+                            'Maintenance_Status': maintenance,
+                            'Last_Release_Year': int(last_release),
+                            'Vendor_Alternatives': int(vendor_alts),
+                            'Notes': notes,
+                        }
+
+                        if db.add_ip_dependency(ip_data):
+                            st.success(f"✅ IP dependency saved for {selected_pn}")
+                            st.rerun()
+                        else:
+                            st.error("Error saving IP dependency")
+
+        # ======================================================================
+        # Sub-tab 2: View All IP Dependencies
+        # ======================================================================
+        with ip_subtab2:
+            st.markdown("**All registered IP dependencies**")
+
+            all_ip_deps = db.get_all_ip_dependencies()
+
+            if not all_ip_deps:
+                st.info("No IP dependencies registered yet.")
+            else:
+                # Crea tabella
+                rows = []
+                for pn, ip_list in sorted(all_ip_deps.items()):
+                    for ip_dep in ip_list:
+                        status = ip_dep.get('Maintenance_Status', 'Active')
+                        status_emoji = {
+                            'Abandoned': '🚫',
+                            'Deprecated': '⚠️',
+                            'Maintenance_Only': '⚠️',
+                            'Active': '✅'
+                        }.get(status, '❓')
+
+                        rows.append({
+                            'Part Number': pn,
+                            'IP Name': ip_dep.get('IP_Name', ''),
+                            'Type': ip_dep.get('IP_Type', ''),
+                            'Vendor': ip_dep.get('IP_Vendor', ''),
+                            'License': ip_dep.get('License_Type', ''),
+                            'Status': f"{status_emoji} {status}",
+                            'Alternatives': int(ip_dep.get('Vendor_Alternatives', 0)),
+                            'ID': ip_dep.get('IP_Dep_ID', ''),
+                        })
+
+                df_ip = pd.DataFrame(rows)
+                st.dataframe(df_ip, use_container_width=True, hide_index=True)
+
+                # Rimozione
+                st.markdown("---")
+                st.markdown("**Remove IP Dependency**")
+
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    ip_to_remove = st.selectbox(
+                        "Select IP to remove",
+                        [f"{r['ID']} - {r['Part Number']} / {r['IP Name']}" for _, r in df_ip.iterrows()],
+                        key="ip_remove_select"
+                    )
+                with col2:
+                    if st.button("🗑️ Remove", type="secondary"):
+                        ip_id = ip_to_remove.split(" - ")[0]
+                        if db.remove_ip_dependency(ip_id):
+                            st.success(f"IP dependency {ip_id} removed")
+                            st.rerun()
+                        else:
+                            st.error("Error removing IP dependency")
+
+        # ======================================================================
+        # Sub-tab 3: Bulk Import
+        # ======================================================================
+        with ip_subtab3:
+            st.markdown("**Import multiple IP dependencies from CSV**")
+            st.info(
+                "CSV format: Part_Number, IP_Name, IP_Type, IP_Vendor, License_Type, "
+                "Maintenance_Status, Last_Release_Year, Vendor_Alternatives, Notes"
+            )
+
+            uploaded_file = st.file_uploader("Upload CSV", type="csv", key="ip_csv_upload")
+
+            if uploaded_file:
+                try:
+                    df_import = pd.read_csv(uploaded_file)
+                    st.write("**Preview:**")
+                    st.dataframe(df_import.head(5), use_container_width=True)
+
+                    if st.button("✅ Import All Rows", type="primary"):
+                        imported = 0
+                        for _, row in df_import.iterrows():
+                            try:
+                                ip_data = {
+                                    'Part_Number': str(row.get('Part_Number', '')).upper(),
+                                    'IP_Name': str(row.get('IP_Name', '')),
+                                    'IP_Type': str(row.get('IP_Type', '')),
+                                    'IP_Vendor': str(row.get('IP_Vendor', '')),
+                                    'License_Type': str(row.get('License_Type', '')),
+                                    'Maintenance_Status': str(row.get('Maintenance_Status', 'Active')),
+                                    'Last_Release_Year': int(row.get('Last_Release_Year', 2026)),
+                                    'Vendor_Alternatives': int(row.get('Vendor_Alternatives', 0)),
+                                    'Notes': str(row.get('Notes', '')),
+                                }
+                                if db.add_ip_dependency(ip_data):
+                                    imported += 1
+                            except Exception as e:
+                                st.warning(f"Error importing row: {e}")
+
+                        st.success(f"✅ Imported {imported}/{len(df_import)} IP dependencies")
+                        st.rerun()
+
+                except Exception as e:
+                    st.error(f"Error reading CSV: {e}")
 
 
 # =============================================================================

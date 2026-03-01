@@ -33,15 +33,17 @@ def render_tab_analisi_rapida():
         if component_data:
             st.success(f"Part Number **{pn_input}** found in the database!")
 
-            # Carica market shortage e alt sources per questo PN
+            # Carica market shortage, alt sources e IP dependencies per questo PN
             market_shortage = st.session_state.db.get_market_shortage()
             alt_sources = st.session_state.db.get_alt_sources(pn_input)
+            ip_deps = st.session_state.db.get_ip_dependencies(pn_input)
 
             # Calcola rischio v5
             risk = calculate_component_risk(
                 component_data, st.session_state.run_rate,
                 alt_sources=alt_sources,
                 market_shortage=market_shortage,
+                ip_dependencies=ip_deps,
             )
 
             # Dashboard principale

@@ -1,178 +1,188 @@
 erDiagram
 
-    %% =========================================================
-    %% INPUT: BOM FILE (slim - 3 colonne utili)
-    %% 01/02/03_BOM_*.xlsx  →  foglio INPUTS
-    %% Riga header contiene anche: Run_Rate (metadato)
-    %% =========================================================
-
-    BOM_FILE {
-        string  Supplier_Part_Number   PK
-        int     Qty_in_BOM
-        int     Buffer_Stock_Units
-    }
-
-    %% =========================================================
-    %% DATABASE: part_numbers_db.xlsx
-    %% =========================================================
+    %% ═══════════════════════════════════════════════════════════
+    %% SEMICONDUCTOR SUPPLY CHAIN RISK MANAGER — ER Diagram v5.0
+    %% ═══════════════════════════════════════════════════════════
 
     Part_Numbers {
-        string  Part_Number             PK
-        string  Supplier_Name
-        string  Category
-        string  Frontend_Country
-        string  Backend_Country
-        string  Technology_Node
-        string  Plant_1_Name
-        string  Plant_2_Name
-        string  Plant_3_Name
-        string  Plant_4_Name
-        string  EMS_Name                FK
-        string  EMS_Location
-        int     Lead_Time_weeks
-        string  EOL_Status
-        int     Number_of_Alt_Sources
-        string  Financial_Health
-        string  Allocation_Status
-        string  Automotive_Grade
-        string  Package_Type
-        string  Proprietary
-        string  Commodity
-        string  Stand_Alone
-        int     Weeks_to_qualify
-        string  Certifications
-        float   Unit_Price
-        int     MTBF_Hours
-        int     Last_Price_Increase_Pct
-        string  SW_Code_Size_KB
-        string  Memory_Type
+        string  Part_Number           PK  "Manufacturer PN"
+        string  Supplier_Name             "Silicon vendor"
+        string  Category                  "MPU|MCU|Memory|PMIC|Sensor|Passive|Other"
+        string  Frontend_Country          "Wafer fab country (geo risk 60%)"
+        string  Backend_Country           "OSAT country (geo risk 40%)"
+        string  Country_Plant_1           "Legacy fab country 1"
+        string  Country_Plant_2           "Legacy fab country 2"
+        string  Country_Plant_3           "Legacy fab country 3"
+        string  Country_Plant_4           "Legacy fab country 4"
+        int     Lead_Time_Weeks           "Factor 3"
+        string  EOL_Status                "Active|NRND|Last_Buy|EOL|Obsolete — Factor 8"
+        string  Proprietary               "Y|N — Factor 7"
+        int     Number_of_Alt_Sources     "Factor 9"
+        string  Allocation_Status         "Normal|Constrained|Allocated — Factor 11"
+        string  Supplier_Financial_Health "A|B|C|D — Factor 10"
+        float   Last_Price_Increase_Pct   "Factor 12"
+        int     Technology_Node_nm        "Factor 15"
+        string  Package_Type              "BGA|QFN|WLCSP|FCBGA|3D-IC — Factor 13"
+        string  Automotive_Grade          "None|AEC-Q100|AEC-Q101|AEC-Q200"
+        int     Weeks_to_Qualify          "Re-qual time — Factor 6"
+        float   Unit_Price_USD
+        string  Functional_Dependencies   "Comma-sep PNs — Factor 5"
+        string  EMS_Used                  "Y|N"
+        string  EMS_Name                  "FK hint → EMS_Providers"
+        string  Memory_Type               "Legacy interface field"
+        string  Supported_Interfaces      "DDR4,DDR5,PCIe… — Factor 19 / Alt Engine"
         string  OS_Type
+        string  SW_Code_Size_KB
         string  Wireless_Protocol
-        string  Functional_Dependencies
-        string  Created_at
-        string  Updated_at
-    }
-
-    Client_Data {
-        string  Client_ID               FK
-        string  Part_Number             FK
-        int     Qty_in_BOM
-        int     Buffer_Stock_Units
-        int     Custom_Lead_Time_weeks
-        string  Notes
+        int     MTBF_Hours
+        datetime Created_at
+        datetime Updated_at
     }
 
     Clients {
-        string  Client_ID               PK
+        string  Client_ID        PK
         string  Client_Name
-        int     Default_Run_Rate
-        string  Created_at
+        string  Industry         "Automotive|Industrial|Medical|Defense|Consumer"
+        int     Default_Run_Rate "PCB/week"
+        string  Contact_Email
+        datetime Created_at
+    }
+
+    Client_Data {
+        string  Part_Number      FK  "→ Part_Numbers"
+        string  Client_ID        FK  "→ Clients"
+        int     Quantity_In_BOM      "Units per PCB"
+        int     Buffer_Stock_Units   "Safety stock — Factor 4"
+        int     Custom_Lead_Time_Weeks
+        string  Notes
+        datetime Last_Updated
+    }
+
+    Tier2_Suppliers {
+        string  Tier2_Supplier_ID   PK
+        string  Tier2_Supplier_Name
+        string  Material_Type       "Raw material category"
+        string  Material_Key        "Unique material identifier"
+        string  Country             "Production country"
+        float   Market_Share_Pct    "Global market share %"
+        string  Criticality         "CRITICAL|HIGH|MEDIUM|LOW — Factor 14"
+        string  Substitutability    "Easy|Hard|Impossible"
+        string  Notes
+        datetime Created_at
+        datetime Updated_at
+    }
+
+    Component_Materials {
+        string  Part_Number         FK  "→ Part_Numbers"
+        string  Material_Key        FK  "→ Tier2_Suppliers"
+        string  Tier2_Supplier_ID   FK  "→ Tier2_Suppliers"
+        string  Material_Name
+        string  Custom_Concentration
+        string  Custom_Country      "Override fab country"
+        string  Notes
+        datetime Created_at
     }
 
     EMS_Providers {
         string  EMS_ID                  PK
         string  EMS_Name
-        string  Country
-        string  Financial_Health
-        int     Capacity_Utilization_Pct
-        string  Certifications
+        string  Country                 "Factor 16"
+        string  Financial_Health        "A|B|C|D — Factor 16"
+        float   Capacity_Utilization_Pct "0–100 — Factor 16"
+        string  Certifications          "ISO9001|IATF16949|AS9100|IPC-J-STD"
         int     Backup_Sites_Count
         int     Years_Business
         string  Notes
+        datetime Created_at
+        datetime Updated_at
     }
 
     Distributors {
         string  Distributor_ID          PK
         string  Name
-        string  Country
-        string  Financial_Health
-        int     Lead_Time_Markup_Weeks
+        string  Country                 "Factor 17"
+        string  Financial_Health        "A|B|C|D — Factor 17"
+        int     Lead_Time_Markup_Weeks  "Extra weeks vs. direct"
         int     Stock_Level_Weeks_Coverage
-        string  Certifications
+        string  Certifications          "AS9120|ISO9001"
         int     Backup_Count
         string  Notes
+        datetime Created_at
+        datetime Updated_at
     }
 
     Part_Distributors {
-        string  Part_Number             FK
-        string  Distributor_ID         FK
-        string  Priority
-        int     Allocation_Pct
-        string  Created_at
+        string  Part_Number     FK  "→ Part_Numbers"
+        string  Distributor_ID  FK  "→ Distributors"
+        string  Priority        "Primary|Secondary"
+        float   Allocation_Pct  "% sourced from this distributor"
+        datetime Created_at
     }
 
     Alt_Sources {
-        string  Part_Number             FK
-        string  Supplier_Name
-        string  Frontend_Country
-        string  Backend_Country
+        string  Part_Number          FK  "→ Part_Numbers"
+        string  Supplier_Name            "Alternative supplier"
+        string  Frontend_Country         "Fab country — Factor 18 Hidden SPOF"
+        string  Backend_Country          "OSAT country — Factor 18"
         int     Lead_Time_Weeks
-        string  Financial_Health
-        string  Qualification_Status
-        int     Allocation_Pct
+        string  Financial_Health         "A|B|C|D"
+        string  Qualification_Status     "Qualified|In_Progress|Not_Started"
+        float   Allocation_Pct
+        string  Interface_Type           "DDR3|DDR4|DDR5|LPDDR4|LPDDR4X|LPDDR5|NOR_Flash|NAND_Flash — Alt Engine"
+        string  Package_Compatible       "Y|N|Partial — Alt Engine"
+        string  OS_Compatible            "Linux|RTOS|Baremetal|Any"
+        string  Drop_In_Replacement      "Y|N|Partial"
+        int     Porting_Effort_Hours     "Alt Engine porting score"
+        string  Availability_Status      "Available|Tight|Shortage|Critical|EOL — Alt Engine"
         string  Notes
-    }
-
-    Tier2_Suppliers {
-        string  Tier2_Supplier_ID       PK
-        string  Tier2_Supplier_Name
-        string  Material_Type
-        string  Material_Key
-        string  Country
-        int     Market_Share_Pct
-        string  Criticality
-        string  Substitutability
-        string  Notes
-    }
-
-    Component_Materials {
-        string  Part_Number             FK
-        string  Material_Key
-        string  Material_Name
-        string  Tier2_Supplier_ID      FK
-        float   Custom_Concentration
-        string  Custom_Country
-        string  Notes
+        datetime Created_at
     }
 
     Supplier_Profiles {
-        string  Supplier_ID             PK
-        string  Supplier_Name
-        string  Primary_Fab
+        string  Supplier_ID              PK
+        string  Supplier_Name            "Must match Part_Numbers.Supplier_Name"
+        string  Primary_Fab              "Main wafer fab name"
         string  Primary_Fab_Country
-        string  Wafer_Source
-        string  Key_Materials_Override
+        string  Wafer_Source             "e.g. Shin-Etsu, Sumco"
+        string  Key_Materials_Override   "JSON: material overrides"
         string  Notes
+        datetime Created_at
+        datetime Updated_at
     }
 
-    %% =========================================================
+    Market_Shortage {
+        string   Interface_Type  PK  "DDR4|LPDDR4|NOR_Flash|NAND_Flash|SiC… — Factor 19"
+        string   Severity            "Available|Tight|Shortage|Critical — Factor 19"
+        date     Since_Date          "Shortage start date"
+        string   Notes               "e.g. AI/Data-Center demand surge"
+        string   Source              "Nexar API|Manual|Bloomberg|IHS Markit"
+        datetime Updated_at
+    }
+
+    %% ═══════════════════════════════════════════════════════════
     %% RELAZIONI
-    %% =========================================================
+    %% ═══════════════════════════════════════════════════════════
 
-    %% Ingresso BOM → lookup nel DB
-    %% join: BOM.Supplier_Part_Number = Part_Numbers.Part_Number (case-insensitive via _normalize_pn)
-    BOM_FILE             }o--o|   Part_Numbers       : "lookup (case-insensitive)"
+    %% Core: Part_Numbers è l'hub centrale
+    Part_Numbers    ||--o{  Client_Data         : "used by"
+    Clients         ||--o{  Client_Data         : "has"
 
-    %% BOM loader scrive qty/buffer in Client_Data dopo batch analysis
-    BOM_FILE             }o--o{   Client_Data        : "scrive Qty + Buffer_Stock"
+    Part_Numbers    ||--o{  Component_Materials : "requires material"
+    Tier2_Suppliers ||--o{  Component_Materials : "supplies material"
 
-    %% Part_Numbers con dati per-cliente
-    Part_Numbers         ||--o{   Client_Data        : "Part_Number"
-    Client_Data          }o--||   Clients            : "Client_ID"
+    Part_Numbers    ||--o{  Part_Distributors   : "sold via"
+    Distributors    ||--o{  Part_Distributors   : "distributes"
 
-    %% Part_Numbers → EMS (soft join per nome stringa)
-    Part_Numbers         }o--o|   EMS_Providers      : "EMS_Name (soft join)"
+    Part_Numbers    ||--o{  Alt_Sources         : "replaced by"
 
-    %% Part_Numbers → Distributori (via tabella bridge)
-    Part_Numbers         ||--o{   Part_Distributors  : "Part_Number"
-    Part_Distributors    }o--||   Distributors       : "Distributor_ID"
+    %% Supplier_Profiles → Part_Numbers (via Supplier_Name = Manufacturer)
+    Supplier_Profiles ||--o{  Part_Numbers      : "manufactures"
 
-    %% Part_Numbers → Fonti alternative
-    Part_Numbers         ||--o{   Alt_Sources        : "Part_Number"
+    %% EMS_Providers → Part_Numbers (soft link via EMS_Name field)
+    EMS_Providers   |o--o{  Part_Numbers        : "assembles (EMS_Name)"
 
-    %% Part_Numbers → Materiali Tier-2 (via tabella bridge)
-    Part_Numbers         ||--o{   Component_Materials : "Part_Number"
-    Component_Materials  }o--||   Tier2_Suppliers    : "Tier2_Supplier_ID"
+    %% Market_Shortage → Part_Numbers (logical join via Supported_Interfaces / Memory_Type)
+    Market_Shortage |o--o{  Part_Numbers        : "impacts (interface match)"
 
-    %% Part_Numbers → Profilo fornitore (soft join su Supplier_Name)
-    Part_Numbers         }o--o|   Supplier_Profiles  : "Supplier_Name (soft join)"
+    %% Market_Shortage → Alt_Sources (logical join via Interface_Type)
+    Market_Shortage |o--o{  Alt_Sources         : "affects availability"

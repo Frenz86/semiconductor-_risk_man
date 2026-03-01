@@ -42,6 +42,8 @@ SHEET_PART_DISTRIBUTORS = 'Part_Distributors'
 SHEET_ALT_SOURCES = 'Alt_Sources'
 SHEET_SUPPLIER_PROFILES = 'Supplier_Profiles'
 SHEET_MARKET_SHORTAGE = 'Market_Shortage'
+# v4.1 - IP Dependencies
+SHEET_IP_DEPENDENCIES = 'IP_Dependencies'
 
 # Colonne obbligatorie per ogni foglio
 PART_NUMBERS_COLUMNS = [
@@ -111,6 +113,7 @@ CLIENTS_COLUMNS = [
 TIER2_SUPPLIERS_COLUMNS = [
     'Tier2_Supplier_ID',
     'Tier2_Supplier_Name',
+    'Supplier_Type',         # v4.1: Raw_Material / IP_Software / EDA / Substrate / Packaging
     'Material_Type',
     'Material_Key',
     'Country',
@@ -211,6 +214,21 @@ SUPPLIER_PROFILES_COLUMNS = [
     'Updated_at',
 ]
 
+IP_DEPENDENCIES_COLUMNS = [
+    'IP_Dep_ID',              # Auto-generato: IPD_001, IPD_002, ...
+    'Part_Number',            # FK -> Part_Numbers (uppercase)
+    'IP_Name',                # Es. "USB3.0 PHY Stack", "TouchPad Firmware"
+    'IP_Type',                # Enum: Peripheral_Library / Firmware_Stack / RTOS / Driver / EDA_IP / Design_Kit / Protocol_Stack
+    'IP_Vendor',              # Es. "Synaptics", "Cadence", "ARM", "SEGGER"
+    'License_Type',           # Enum: Proprietary / Open_Source / Custom / BSD / MIT
+    'Maintenance_Status',     # Enum: Active / Maintenance_Only / Deprecated / Abandoned
+    'Last_Release_Year',      # Int (anno) — indicatore di attività
+    'Vendor_Alternatives',    # Int 0-N — quanti vendor alternativi
+    'Notes',
+    'Created_at',
+    'Updated_at',
+]
+
 
 # =============================================================================
 # CLASSE PRINCIPALE
@@ -279,6 +297,10 @@ class PartNumberDatabase:
             )
             pd.DataFrame(columns=MARKET_SHORTAGE_COLUMNS).to_excel(
                 writer, sheet_name=SHEET_MARKET_SHORTAGE, index=False
+            )
+            # v4.1 - IP Dependencies
+            pd.DataFrame(columns=IP_DEPENDENCIES_COLUMNS).to_excel(
+                writer, sheet_name=SHEET_IP_DEPENDENCIES, index=False
             )
 
     def _load_sheet(self, sheet_name: str) -> pd.DataFrame:
@@ -662,6 +684,8 @@ class PartNumberDatabase:
                 (SHEET_PART_DISTRIBUTORS, PART_DISTRIBUTORS_COLUMNS),
                 (SHEET_ALT_SOURCES, ALT_SOURCES_COLUMNS),
                 (SHEET_SUPPLIER_PROFILES, SUPPLIER_PROFILES_COLUMNS),
+                # v4.1 - IP Dependencies
+                (SHEET_IP_DEPENDENCIES, IP_DEPENDENCIES_COLUMNS),
             ]:
                 df_new = self._load_sheet(sheet_name)
                 if df_new.empty or not all(c in df_new.columns for c in columns):
@@ -813,6 +837,125 @@ class PartNumberDatabase:
     def get_all_component_materials(self) -> Dict[str, List[Dict[str, Any]]]:
         """Restituisce tutte le associazioni, raggruppate per Part Number."""
         df = self._load_sheet(SHEET_COMPONENT_MATERIALS)
+        if df.empty:
+            return {}
+        result = {}
+        for _, row in df.iterrows():
+            pn = str(row.get('Part_Number', '')).upper()
+            if pn:
+                if pn not in result:
+                    result[pn] = []
+                result[pn].append(row.to_dict())
+        return result
+
+    # -------------------------------------------------------------------------
+    # METODI PUBBLICI - IP DEPENDENCIES (v4.1)
+    # -------------------------------------------------------------------------
+
+    def get_ip_dependencies(self, part_number: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Restituisce le dipendenze IP, opzionalmente filtrate per Part Number.
+
+        Args:
+            part_number: Part Number da filtrare (opzionale)
+
+        Returns:
+            Lista di dizionari con le dipendenze IP
+        """
+        df = self._load_sheet(SHEET_IP_DEPENDENCIES)
+        if df.empty:
+            return []
+        if part_number:
+            pn_normalized = self._normalize_pn(part_number)
+            mask = df['Part_Number'].astype(str).str.upper() == pn_normalized
+            return df[mask].to_dict('records')
+        return df.to_dict('records')
+
+    def add_ip_dependency(self, data: Dict[str, Any]) -> bool:
+        """
+        Aggiunge o aggiorna una dipendenza IP per un Part Number.
+
+        Args:
+            data: Dizionario con i dati della dipendenza IP
+
+        Returns:
+            True se successo, False altrimenti
+        """
+        try:
+            df = self._load_sheet(SHEET_IP_DEPENDENCIES)
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+            # Auto-genera ID se non fornito
+            ip_id = data.get('IP_Dep_ID', '')
+            if not ip_id:
+                existing_ids = df['IP_Dep_ID'].tolist() if not df.empty else []
+                max_num = 0
+                for eid in existing_ids:
+                    try:
+                        num = int(str(eid).replace('IPD_', ''))
+                        max_num = max(max_num, num)
+                    except (ValueError, TypeError):
+                        pass
+                ip_id = f"IPD_{max_num + 1:03d}"
+
+            # Normalizza Part_Number
+            if 'Part_Number' in data:
+                data['Part_Number'] = self._normalize_pn(data['Part_Number'])
+
+            data['IP_Dep_ID'] = ip_id
+            data['Updated_at'] = now
+
+            if df.empty:
+                data['Created_at'] = now
+                new_row = pd.DataFrame([data])
+                df = pd.concat([df, new_row], ignore_index=True)
+            else:
+                mask = df['IP_Dep_ID'].astype(str) == str(ip_id)
+                if mask.any():
+                    for col in df.columns:
+                        if col in data and col != 'Created_at':
+                            df.loc[mask, col] = data[col]
+                else:
+                    data['Created_at'] = now
+                    new_row = pd.DataFrame([data])
+                    df = pd.concat([df, new_row], ignore_index=True)
+
+            self._save_sheet(df, SHEET_IP_DEPENDENCIES)
+            return True
+        except Exception as e:
+            print(f"Errore nell'aggiungere dipendenza IP: {e}")
+            return False
+
+    def remove_ip_dependency(self, ip_dep_id: str) -> bool:
+        """
+        Rimuove una dipendenza IP.
+
+        Args:
+            ip_dep_id: ID della dipendenza IP (es. IPD_001)
+
+        Returns:
+            True se successo, False altrimenti
+        """
+        try:
+            df = self._load_sheet(SHEET_IP_DEPENDENCIES)
+            if df.empty:
+                return False
+            mask = df['IP_Dep_ID'].astype(str) == str(ip_dep_id)
+            df = df[~mask]
+            self._save_sheet(df, SHEET_IP_DEPENDENCIES)
+            return True
+        except Exception as e:
+            print(f"Errore nella rimozione dipendenza IP: {e}")
+            return False
+
+    def get_all_ip_dependencies(self) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Restituisce tutte le dipendenze IP, raggruppate per Part Number.
+
+        Returns:
+            Dizionario {PN_UPPER: [lista_dipendenze_IP]}
+        """
+        df = self._load_sheet(SHEET_IP_DEPENDENCIES)
         if df.empty:
             return {}
         result = {}

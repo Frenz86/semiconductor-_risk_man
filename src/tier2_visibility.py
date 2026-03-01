@@ -801,6 +801,113 @@ def _generate_recommendations(
 
 
 # =============================================================================
+# IP/SW DEPENDENCY RISK (v4.1)
+# =============================================================================
+
+def calculate_ip_risk(part_number: str, ip_deps: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Calcola il rischio IP/SW per un componente basato sulle dipendenze software.
+
+    Valuta:
+    - Status peggiore tra le dipendenze (Abandoned > Deprecated > Maintenance_Only > Active)
+    - Concentrazione su singolo vendor proprietario (lock-in risk)
+    - Numero di IP senza alternative
+
+    Args:
+        part_number: Part number del componente
+        ip_deps: Lista di dipendenze IP (da db.get_ip_dependencies(pn))
+
+    Returns:
+        Dizionario con score 0-20 e dettagli
+    """
+    if not ip_deps:
+        return {
+            'ip_score': 0,
+            'ip_factors': [],
+            'ip_suggestions': [],
+            'has_risk': False,
+            'worst_ip': None,
+        }
+
+    score = 0
+    factors = []
+    suggestions = []
+
+    # Mappa status → penalità
+    STATUS_SCORE = {
+        'Abandoned': 10,
+        'Deprecated': 7,
+        'Maintenance_Only': 4,
+        'Active': 0,
+    }
+
+    # 1. Status peggiore tra le dipendenze
+    worst_status = max(
+        ip_deps,
+        key=lambda x: STATUS_SCORE.get(x.get('Maintenance_Status', 'Active'), 0)
+    )
+    worst_status_score = STATUS_SCORE.get(worst_status.get('Maintenance_Status', 'Active'), 0)
+    score += worst_status_score
+
+    if worst_status_score >= 10:
+        factors.append(f"Abandoned IP: {worst_status['IP_Name']} by {worst_status['IP_Vendor']}")
+        suggestions.append(
+            f"**CRITICAL**: IP '{worst_status['IP_Name']}' from {worst_status['IP_Vendor']} is abandoned. "
+            f"Plan immediate migration to alternative supplier."
+        )
+    elif worst_status_score >= 7:
+        factors.append(f"Deprecated IP: {worst_status['IP_Name']} by {worst_status['IP_Vendor']}")
+        suggestions.append(
+            f"**HIGH**: IP '{worst_status['IP_Name']}' is deprecated. Prepare migration plan."
+        )
+    elif worst_status_score >= 4:
+        factors.append(f"Limited maintenance: {worst_status['IP_Name']}")
+
+    # 2. Lock-in risk: dipendenze proprietarie sullo stesso vendor
+    proprietary_deps = [d for d in ip_deps if d.get('License_Type') == 'Proprietary']
+    if proprietary_deps:
+        vendors = [d['IP_Vendor'] for d in proprietary_deps]
+        unique_vendors = set(vendors)
+
+        # Se tutti proprietari da un solo vendor → lock-in
+        if len(unique_vendors) == 1 and len(vendors) >= 2:
+            score += 3
+            vendor_name = list(unique_vendors)[0]
+            factors.append(f"Vendor lock-in: {len(vendors)} proprietary IPs from {vendor_name}")
+            suggestions.append(
+                f"**HIGH**: Your product depends on {len(vendors)} proprietary IPs from {vendor_name}. "
+                f"Vendor lock-in risk is high. Evaluate OSS alternatives."
+            )
+        elif len(unique_vendors) == 1:
+            score += 1  # Single proprietary vendor (but only 1 IP)
+            factors.append(f"Single proprietary vendor: {list(unique_vendors)[0]}")
+
+    # 3. IP senza alternative (Vendor_Alternatives == 0)
+    no_alt_ips = [d for d in ip_deps if int(d.get('Vendor_Alternatives', 1)) == 0]
+    if no_alt_ips:
+        no_alt_score = min(5, len(no_alt_ips) * 2)
+        score += no_alt_score
+        factors.append(f"{len(no_alt_ips)} IPs with no vendor alternatives")
+        if len(no_alt_ips) >= 2:
+            suggestions.append(
+                f"**MEDIUM**: {len(no_alt_ips)} IPs have no alternative suppliers. "
+                f"Single points of failure in SW stack."
+            )
+
+    ip_score = min(20, score)
+
+    return {
+        'ip_score': ip_score,
+        'ip_factors': factors,
+        'ip_suggestions': suggestions,
+        'has_risk': ip_score > 0,
+        'worst_ip': worst_status,
+        'proprietary_count': len(proprietary_deps),
+        'no_alt_count': len(no_alt_ips),
+    }
+
+
+# =============================================================================
 # LOOKUP PER WHAT-IF SIMULATOR
 # =============================================================================
 

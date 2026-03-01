@@ -1,4 +1,4 @@
-# Supply Chain Resilience Platform v4.0
+# Supply Chain Resilience Platform v4.1
 
 Piattaforma per la **valutazione proattiva del rischio e della resilienza** della supply chain elettronica nel settore semiconduttori.
 
@@ -16,6 +16,7 @@ Analizza BOM (Bill of Materials) di schede elettroniche, calcola un risk score d
 | **Mappa Geopolitica** | Mappa Folium con rischio stratificato Frontend (Wafer Fab) / Backend (Assembly/Test OSAT) per paese |
 | **Tier-2/3 Visibility** | Analisi dipendenze a monte: materiali critici (neon, photoresists, silicon wafers, terre rare), heatmap concentrazione per paese |
 | **Filiera Commerciale** | Visibilità su EMS provider, distributori e fonti alternative per ogni componente |
+| **Alternative Engine** | Compatibility score per fonti alternative (interfaccia, package, effort porting, market shortage) |
 | **Costi di Switching** | Stima ore-uomo e costi di sostituzione componente, classificazione TRIVIALE / MODERATO / COMPLESSO / CRITICO |
 | **Simulatore What-If** | Scenari di disruption: blocco paese, interruzione fornitore, aumento lead time, picco domanda, carenza materiale Tier-2 |
 | **Gestione Database** | CRUD completo per Part Numbers, Clienti, Tier-2, EMS, distributori e profili fornitore |
@@ -25,9 +26,9 @@ Analizza BOM (Bill of Materials) di schede elettroniche, calcola un risk score d
 
 ## Risk Engine
 
-Il motore di rischio calcola uno **score 0–100** per ogni componente basato su 15 fattori.
+Il motore di rischio calcola uno **score 0–100** per ogni componente basato su 18 fattori.
 
-### Fattori base (pesati)
+### Fattori base (pesati) — Fattori 1–15
 
 | Fattore | Peso | Dettaglio |
 |---------|------|-----------|
@@ -39,7 +40,7 @@ Il motore di rischio calcola uno **score 0–100** per ogni componente basato su
 | Proprietarieta' | 10% | Commodity vs. proprietario/custom |
 | Certificazioni | 5% | Tempo di riqualifica (AEC-Q100, IEC 61508, ecc.) |
 
-### Fattori addizionali
+### Fattori addizionali — Fattori 16–18
 
 | Fattore | Punti Max | Dettaglio |
 |---------|-----------|-----------|
@@ -51,6 +52,9 @@ Il motore di rischio calcola uno **score 0–100** per ogni componente basato su
 | Package Type | +3 | Package avanzati (WLCSP, FCBGA, 3D) |
 | Technology Node | +5 | Nodi avanzati <= 7nm |
 | Tier-2/3 Supply Chain | +15 | Concentrazione materiali critici a monte |
+| **EMS Risk** (F16) | +12 | Rischio produttore a contratto (concentrazione, backup, audit) |
+| **Distributor Risk** (F17) | +10 | Rischio distributore (mono-distributore, stock, greymarket) |
+| **Hidden Single Source** (F18) | +12 | SPOF nascosto: fonti alternative convergono sullo stesso paese/fab |
 
 **Soglie di rischio:**
 - **ALTO** (rosso): score >= 55
@@ -92,7 +96,8 @@ semiconductor_risk_man/
 │   └── 03_BOM_Industrial_IoT_Gateway_12.xlsx
 │
 ├── src/
-│   ├── risk_engine.py            # Motore di calcolo rischio
+│   ├── risk_engine.py            # Motore di calcolo rischio (18 fattori)
+│   ├── alternative_engine.py     # Compatibility score per fonti alternative (v5.0)
 │   ├── pn_lookup.py              # Database manager (Excel-based)
 │   ├── geo_risk.py               # Rischio geopolitico Frontend/Backend
 │   ├── switching_cost.py         # Calcolo costi di switching
@@ -102,25 +107,26 @@ semiconductor_risk_man/
 │   ├── ems_risk.py               # Risk scoring EMS provider
 │   ├── distributor_risk.py       # Risk scoring distributori
 │   ├── pdf_export.py             # Generazione report PDF (ReportLab)
-│   └── tabs/
+│   └── tabs/                     # Pacchetto UI (refactored da tabs_modules.py)
 │       ├── __init__.py           # Facade: re-esporta tutte le render_tab_*
 │       ├── _shared.py            # Componenti UI condivisi (badge, mermaid)
-│       ├── analisi_rapida.py
-│       ├── analisi_multipla.py
-│       ├── dashboard.py
-│       ├── albero_dipendenze.py
-│       ├── mappa_geopolitica.py
-│       ├── tier2_visibility.py
-│       ├── costi_switching.py
-│       ├── filiera_commerciale.py
-│       ├── whatif.py
-│       ├── gestione_database.py
-│       └── guida.py
+│       ├── analisi_rapida.py     # Analisi Singola PN
+│       ├── analisi_multipla.py   # Analisi batch BOM
+│       ├── dashboard.py          # Dashboard Esecutiva
+│       ├── albero_dipendenze.py  # Albero Dipendenze (NetworkX)
+│       ├── mappa_geopolitica.py  # Mappa Folium geopolitica
+│       ├── tier2_visibility.py   # Visibilita' Tier-2/3
+│       ├── costi_switching.py    # Costi di switching
+│       ├── filiera_commerciale.py# Filiera Commerciale (EMS, distributori)
+│       ├── whatif.py             # Simulatore What-If
+│       ├── gestione_database.py  # CRUD database
+│       └── guida.py              # Guida utente
 │
 ├── scripts/
 │   ├── populate_sample_data.py   # Popola il DB con dati di esempio
 │   ├── create_bom_examples.py    # Genera i BOM Excel di esempio
-│   └── update_database_from_bom.py  # Importa BOM nel database
+│   ├── update_database_from_bom.py  # Importa BOM nel database
+│   └── create_readme_sheet.py   # Aggiunge foglio README al DB Excel
 │
 └── docs/
     ├── er_diagram.mmd            # ER diagram (Mermaid)
@@ -220,9 +226,11 @@ L'applicazione sara' disponibile su `http://localhost:8501`.
 ### Alta priorita'
 - Integrazione **Nexar API** per inventory e pricing real-time
 - **EOL/PCN Alert System** — monitoraggio end-of-life e product change notice
-- **Second Source Qualification Matrix**
+- Salvataggio storico analisi (trend per data)
+- Credenziali non hardcoded (per uso multi-utente)
 
 ### Media priorita'
+- Estensione PDF export alle sezioni Filiera Commerciale
 - Safety stock dinamico con formula statistica (Z × sigma × sqrt(LT))
 - Supplier Scorecard con KPI quantitativi (OTD, Quality PPM, financial health)
 - Compliance & Sanctions (ITAR, EAR, OFAC, REACH, Conflict Minerals)

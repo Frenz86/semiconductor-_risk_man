@@ -384,6 +384,9 @@ def _run_batch_analysis(pns: List[str], client_id, run_rate):
     supplier_profiles_all = db.get_all_supplier_profiles()
     supplier_profiles_by_name = {str(s.get('Supplier_Name', '')).upper(): s for s in supplier_profiles_all}
 
+    # v4.1 - Dipendenze IP per PN
+    all_ip_dependencies = db.get_all_ip_dependencies()
+
     # Calcola rischi individuali
     components_data = []
     components_risk = []
@@ -396,6 +399,7 @@ def _run_batch_analysis(pns: List[str], client_id, run_rate):
 
         dist_list = all_part_distributors.get(pn_upper, [])
         alt_sources = all_alt_sources.get(pn_upper, [])
+        ip_deps = all_ip_dependencies.get(pn_upper, [])
 
         supplier_name = str(data.get('Supplier Name', '') or '').upper()
         supplier_profile = supplier_profiles_by_name.get(supplier_name)
@@ -405,6 +409,7 @@ def _run_batch_analysis(pns: List[str], client_id, run_rate):
             ems_provider_data=ems_profile,
             distributor_list=dist_list,
             alt_sources=alt_sources,
+            ip_dependencies=ip_deps,
         )
         risk['part_number'] = pn
         risk['supplier'] = data.get('Supplier Name', 'N/A')

@@ -7,12 +7,8 @@ Questo file viene letto automaticamente da Claude Code ad ogni sessione.
 ## Come avviare l'app
 
 ```bash
-python -m streamlit run app.py
+streamlit run app.py
 ```
-
-> `streamlit run app.py` è bloccato dalla Windows Application Control Policy aziendale.
-> Esiste un wrapper `C:\Users\danie\.local\bin\streamlit.cmd` che chiama `python -m streamlit %*`.
-
 ---
 
 ## Versione attuale: v4.0 (Supply Chain)

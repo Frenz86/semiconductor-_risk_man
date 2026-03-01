@@ -23,7 +23,7 @@ from dependency_graph import (
     build_dependency_graph, calculate_chain_risk,
     find_single_points_of_failure, render_dependency_tree
 )
-from tier2_visibility import calculate_tier2_risk
+from tier2_visibility import calculate_tier2_risk, calculate_ip_risk
 from ems_risk import calculate_ems_risk
 from distributor_risk import calculate_distributor_risk
 from alternative_engine import find_compatible_alternatives, check_shortage_impact
@@ -160,10 +160,12 @@ def calculate_component_risk(
     distributor_list: Optional[List[Dict[str, Any]]] = None,
     alt_sources: Optional[List[Dict[str, Any]]] = None,
     market_shortage: Optional[Dict[str, str]] = None,
+    ip_dependencies: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     Calcola il rischio per un singolo componente.
 
+    v4.1: Aggiunge IP/SW dependency risk scoring.
     v4.0: Aggiunge EMS risk scoring, distributor risk, hidden single source,
     oltre a geo risk frontend/backend, technology node risk, switching cost.
 
@@ -173,6 +175,8 @@ def calculate_component_risk(
         ems_provider_data: Profilo EMS dal DB (opzionale)
         distributor_list: Lista distributori associati al PN (opzionale)
         alt_sources: Lista fonti alternative dal DB (opzionale)
+        market_shortage: Dizionario shortage per interfacce (opzionale)
+        ip_dependencies: Lista dipendenze IP dal DB (opzionale, v4.1)
 
     Returns:
         Dizionario con:
@@ -577,7 +581,24 @@ def calculate_component_risk(
             man_hours += 40
 
     # =====================================================================
-    # 19. MARKET SHORTAGE PENALTY (fino a +8) - v5.0
+    # 19. IP/SW DEPENDENCY RISK (fino a +10) - v4.1
+    # =====================================================================
+    ip_result = calculate_ip_risk(
+        str(row.get('Part Number', '')),
+        ip_dependencies or []
+    )
+    ip_contribution = 0
+    if ip_result.get('ip_score', 0) > 0:
+        # Scala 0-20 → max 10 punti
+        ip_contribution = min(10, int(ip_result['ip_score'] * 0.5))
+        score += ip_contribution
+        factors.extend(ip_result.get('ip_factors', []))
+        suggestions.extend(ip_result.get('ip_suggestions', []))
+        if ip_result.get('worst_ip', {}).get('Maintenance_Status') in ['Abandoned', 'Deprecated']:
+            man_hours += 24
+
+    # =====================================================================
+    # 20. MARKET SHORTAGE PENALTY (fino a +8) - v5.0
     # =====================================================================
     shortage_result = check_shortage_impact(row, market_shortage or {})
     shortage_penalty = 0
