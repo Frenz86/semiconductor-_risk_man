@@ -126,7 +126,7 @@ def render_tab_dashboard_esecutiva():
             hole=0.4
         )
         fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-        st.plotly_chart(fig_pie, use_container_use_container_width=True)
+        st.plotly_chart(fig_pie, use_container_width=True)
 
     with chart_col2:
         # Bar chart fornitori a rischio
@@ -149,7 +149,7 @@ def render_tab_dashboard_esecutiva():
             )
             fig_supp.update_traces(texttemplate='%{text:.1f}', textposition='auto')
             fig_supp.update_layout(yaxis={'categoryorder': 'total ascending'})
-            st.plotly_chart(fig_supp, use_container_use_container_width=True)
+            st.plotly_chart(fig_supp, use_container_width=True)
 
     st.markdown("---")
 

@@ -12,7 +12,8 @@
       "Bash(python3:*)",
       "Bash(python:*)",
       "Bash(find src/tabs -name \"*.py\" -type f -exec sed -i 's/width=True/use_container_width=True/g' {} +)",
-      "Bash(xargs -0 perl -i -pe 's/width=True/use_container_width=True/g')"
+      "Bash(xargs -0 perl -i -pe 's/width=True/use_container_width=True/g')",
+      "Bash(xargs -0 perl -i -pe 's/use_container_use_container_width/use_container_width/g')"
     ]
   }
 }
