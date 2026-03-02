@@ -196,7 +196,10 @@ def render_tab_dashboard_esecutiva():
             'Probability': r.get('px_probability', 1),
             'Impact': r.get('px_impact', 1),
             'P×I Score': r.get('px_score', 1),
-            'Risk Level': r.get('risk_level', 'LOW'),
+            'Risk Zone': (
+                r.get('px_color')
+                or ('RED' if r.get('px_score', 0) >= 12 else 'YELLOW' if r.get('px_score', 0) >= 6 else 'GREEN')
+            ),
             'Score': r.get('score', 0),
         }
         for r in risks if r.get('px_score') is not None
@@ -204,29 +207,86 @@ def render_tab_dashboard_esecutiva():
 
     if px_data:
         df_px = pd.DataFrame(px_data)
-        color_map = {'HIGH': '#ff4444', 'MEDIUM': '#ffbb33', 'LOW': '#00C851'}
+
+        # KPI distribuzione zone (calcolati prima del filtro)
+        n_total = len(df_px)
+        n_red = (df_px['Risk Zone'] == 'RED').sum()
+        n_yellow = (df_px['Risk Zone'] == 'YELLOW').sum()
+        n_green = (df_px['Risk Zone'] == 'GREEN').sum()
+
+        # Toggle filtro
+        show_only_red = st.checkbox("Show only HIGH risk components (P×I ≥ 12)", key="px_filter_red")
+        df_px_plot = df_px[df_px['Risk Zone'] == 'RED'] if show_only_red else df_px
+
+        color_map = {'RED': '#ff4444', 'YELLOW': '#ffbb33', 'GREEN': '#00C851'}
         fig_px = px.scatter(
-            df_px,
+            df_px_plot,
             x='Probability',
             y='Impact',
-            color='Risk Level',
+            color='Risk Zone',
             color_discrete_map=color_map,
             size='P×I Score',
-            hover_data=['Part Number', 'Supplier', 'Score', 'P×I Score'],
+            size_max=28,
             title='P×I Risk Matrix (ISO 31000)',
-            labels={'Probability': 'Probability (1-5)', 'Impact': 'Impact (1-5)'},
+            labels={'Probability': 'Probability (1–5)', 'Impact': 'Impact (1–5)', 'Risk Zone': 'Zone'},
             range_x=[0.5, 5.5],
             range_y=[0.5, 5.5],
+            custom_data=['Part Number', 'Supplier', 'Score', 'P×I Score'],
         )
-        # Zone colorate di sfondo
+
+        # Hover template personalizzato
+        fig_px.update_traces(
+            hovertemplate=(
+                "<b>%{customdata[0]}</b><br>"
+                "Supplier: %{customdata[1]}<br>"
+                "P×I Score: %{customdata[3]}/25<br>"
+                "Risk Score: %{customdata[2]}/100<br>"
+                "P: %{x} | I: %{y}"
+                "<extra></extra>"
+            ),
+            marker_sizemin=6,
+        )
+
+        # Zone di sfondo (4 quadranti)
         fig_px.add_shape(type='rect', x0=0.5, y0=0.5, x1=2.5, y1=2.5,
-                         fillcolor='#e8f5e9', opacity=0.3, line_width=0)
+                         fillcolor='#00C851', opacity=0.07, line_width=0, layer='below')
+        fig_px.add_shape(type='rect', x0=2.5, y0=0.5, x1=5.5, y1=2.5,
+                         fillcolor='#ffbb33', opacity=0.07, line_width=0, layer='below')
+        fig_px.add_shape(type='rect', x0=0.5, y0=2.5, x1=2.5, y1=5.5,
+                         fillcolor='#ffbb33', opacity=0.07, line_width=0, layer='below')
         fig_px.add_shape(type='rect', x0=2.5, y0=2.5, x1=5.5, y1=5.5,
-                         fillcolor='#ffebee', opacity=0.3, line_width=0)
-        fig_px.update_layout(height=380, xaxis=dict(tickmode='linear', dtick=1),
-                              yaxis=dict(tickmode='linear', dtick=1))
+                         fillcolor='#ff4444', opacity=0.07, line_width=0, layer='below')
+
+        # Etichette quadranti
+        fig_px.add_annotation(x=1.5, y=1.1, text="ACCEPTABLE", showarrow=False,
+                               font=dict(size=10, color='#2e7d32'), opacity=0.65)
+        fig_px.add_annotation(x=4.0, y=1.1, text="MONITOR", showarrow=False,
+                               font=dict(size=10, color='#e65100'), opacity=0.65)
+        fig_px.add_annotation(x=1.5, y=4.9, text="MONITOR", showarrow=False,
+                               font=dict(size=10, color='#e65100'), opacity=0.65)
+        fig_px.add_annotation(x=4.0, y=4.9, text="REDUCE / AVOID", showarrow=False,
+                               font=dict(size=10, color='#b71c1c'), opacity=0.65)
+
+        fig_px.update_layout(
+            height=420,
+            xaxis=dict(tickmode='linear', dtick=1),
+            yaxis=dict(tickmode='linear', dtick=1),
+            margin=dict(t=50, b=10),
+            legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+        )
         st.plotly_chart(fig_px, use_container_width=True)
-        st.caption("Size = P×I score (1-25). Top-right = high risk zone. Bottom-left = low risk zone.")
+
+        # KPI distribuzione zone P×I
+        kpi_px1, kpi_px2, kpi_px3 = st.columns(3)
+        with kpi_px1:
+            pct = f"{n_red / n_total * 100:.0f}%" if n_total else "0%"
+            st.metric("🔴 HIGH Zone (P×I ≥ 12)", f"{n_red} components ({pct})")
+        with kpi_px2:
+            pct = f"{n_yellow / n_total * 100:.0f}%" if n_total else "0%"
+            st.metric("🟡 MEDIUM Zone (6 ≤ P×I < 12)", f"{n_yellow} components ({pct})")
+        with kpi_px3:
+            pct = f"{n_green / n_total * 100:.0f}%" if n_total else "0%"
+            st.metric("🟢 LOW Zone (P×I < 6)", f"{n_green} components ({pct})")
     else:
         st.info("Run a Multiple Analysis to display the P×I matrix.")
 
