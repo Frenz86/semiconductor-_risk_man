@@ -39,7 +39,7 @@ def render_tab_mappa_geopolitica():
                 )
 
             if markers:
-                m = folium.Map(location=[30, 0], zoom_start=2, tiles='CartoDB positron')
+                m = folium.Map(location=[30, 0], zoom_start=2, tiles='OpenStreetMap')
 
                 for marker in markers:
                     color = 'red' if marker['risk_score'] >= 20 else 'orange' if marker['risk_score'] >= 10 else 'green'
