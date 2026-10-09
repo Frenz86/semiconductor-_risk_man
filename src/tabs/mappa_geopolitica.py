@@ -59,7 +59,7 @@ def render_tab_mappa_geopolitica():
                         icon=folium.Icon(color=color, icon=icon, prefix='fa')
                     ).add_to(m)
 
-                st_folium(m, width=None, height=500)
+                st_folium(m, width=None, height=500, returned_objects=[])
             else:
                 st.info("No geographic data available for mapping")
         except ImportError:
